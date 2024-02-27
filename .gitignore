@@ -1,0 +1,7 @@
+# Python Envs
+venv/
+.venv/
+
+# Job Runner Files
+slurm*
+run_job.sh
