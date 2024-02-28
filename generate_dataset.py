@@ -5,43 +5,9 @@ Combines all (English) books by author into one file per author
 import os
 import random
 import re
-import pickle
 import pandas as pd
-from transformers import RobertaTokenizer
-from torch.utils.data import Dataset
-import torch
 
 random.seed(42)
-
-class AuthorshipPairDataset(Dataset):
-    """Authorship Pair Dataset
-
-    Args:
-        text_data1 (list[torch.Tensor]): OG Author Text
-        text_data2 (list[torch.Tensor]): Other Author Text
-        labels (list[int]): Same or Different Booleans (0 is same)
-    """
-
-    def __init__(
-        self,
-        text_data1: list[torch.Tensor],
-        text_data2: list[torch.Tensor],
-        labels: list[list[int]],
-    ) -> None:
-        self.text_data1 = text_data1
-        self.text_data2 = text_data2
-        self.labels = labels
-
-    def __len__(self) -> int:
-        return len(self.labels)
-
-    def __getitem__(self, idx: int):
-        inputs1 = self.text_data1[idx]
-        inputs2 = self.text_data2[idx]
-        label = torch.tensor(self.labels[idx])
-
-        return inputs1, inputs2, label
-
 
 def group_by_author(data_path: str = "../compute/gutenberg/data") -> None:
     """Gets all English books, and writes them to a file with the author of the book as the title
@@ -90,7 +56,8 @@ def group_by_author(data_path: str = "../compute/gutenberg/data") -> None:
             ) as f:
                 f.write(text + "\n")
 
-#pylint: disable=dangerous-default-value
+
+# pylint: disable=dangerous-default-value
 def split_text(
     author: str, data_path: str = "../compute/gutenberg/data", memo={}
 ) -> list:
@@ -98,7 +65,7 @@ def split_text(
 
     Args:
         author (str): author to split
-        data_path (str, optional): The path to the data dir. Defaults to "../compute/gutenberg/data".
+        data_path (str, optional): The path to the data dir. Defaults to "../compute/gutenberg/data"
         memo (dict, optional): Memo Dict. Defaults to {}.
 
     Returns:
@@ -117,90 +84,103 @@ def split_text(
     return sentences
 
 
-def get_single_data(texts: list, tokenizer: RobertaTokenizer, max_length=512):
-    """ Gets a single data point (1/2 of a pair)
+def get_single_data(texts: list, max_length=512) -> str:
+    """Gets a single data point (1/2 of a pair)
 
     Args:
         texts (list): list of texts to choose from
-        tokenizer (RobertaTokenizer): Roberta Tokenizer
         max_length (int, optional): Max string length. Defaults to 512.
 
     Returns:
-        Batch Encoding: Tokenized text
+        str: Single text chunk of length 12 <= length <= max_length
     """
     text_len = random.randint(12, max_length)
     text_idx = random.randint(0, len(texts))
     text = texts[text_idx]
     while (
-        len(texts[text_idx]) < text_len
+        len(texts[text_idx].split()) < text_len
         and text_idx + 1 < len(texts)
-        and len(texts[text_idx] + texts[text_idx + 1]) <= text_len
+        and len(texts[text_idx].split() + texts[text_idx + 1].split()) <= text_len
     ):
-        text += texts[text_idx + 1]
-    text_tokenized = tokenizer(
-        text, padding="max_length", max_length=max_length, return_tensors="pt"
-    )
-    return text_tokenized
+        text += " " + texts[text_idx + 1]
+    return text
 
 
 def get_random_pair(
     authors: list,
-    tokenizer: RobertaTokenizer,
     data_path: str = "../compute/gutenberg/data",
-):
+) -> tuple[str, str, int]:
     """Gets a random pair of texts
 
     Args:
         authors (list): list of authors to choose from
-        tokenizer (RobertaTokenizer): Roberta Tokenizer
-        data_path (str, optional): The path to the data dir. Defaults to "../compute/gutenberg/data".
+        data_path (str, optional): The path to the data dir. Defaults to "../compute/gutenberg/data"
 
     Returns:
-        (tuple[BatchEncoding, BatchEncoding, Literal[0]] | tuple[BatchEncoding, BatchEncoding, Literal[1]]): Text1 Tokenized, Text2 Tokenized, Label
+        (tuple[str, str, int]): text1, text2, boolean label (0 is same, 1 is different)
     """
+
     # same author
     if random.randint(0, 1) == 0:
         texts = split_text(random.choice(authors), data_path)
-        text1 = get_single_data(texts, tokenizer)
-        text2 = get_single_data(texts, tokenizer)
+        text1 = get_single_data(texts)
+        text2 = get_single_data(texts)
         return text1, text2, 0
+
     # different author
-    else:
-        author1 = random.choice(authors)
+    author1 = random.choice(authors)
+    author2 = random.choice(authors)
+    while author1 == author2:
         author2 = random.choice(authors)
-        while author1 == author2:
-            author2 = random.choice(authors)
-        texts1 = split_text(author1, data_path)
-        texts2 = split_text(author2, data_path)
-        text1 = get_single_data(texts1, tokenizer)
-        text2 = get_single_data(texts2, tokenizer)
-        return text1, text2, 1
+    texts1 = split_text(author1, data_path)
+    texts2 = split_text(author2, data_path)
+    text1 = get_single_data(texts1)
+    text2 = get_single_data(texts2)
+    return text1, text2, 1
 
 
 def generate_dataset(
-    tokenizer: RobertaTokenizer,
-    dataset_size: int = 80000,
-    authors: list = [None],
-    data_path: str = "../compute/gutenberg/data/",
-) -> AuthorshipPairDataset:
+    dataset_type: str,
+    dataset_size: int,
+    authors: list,
+    split_size: int = 10000,
+    data_path: str = "../compute/gutenberg/data",
+) -> None:
     """Generates a dataset of random pairs
+    For each pair:
+        text1, text2, label
+    Saved into csv files of size split_size
 
     Args:
-        tokenizer (RobertaTokenizer): Roberta Tokenizer
-        dataset_size (int, optional): Number of pairs to generate for the dataset. Defaults to 80000.
-        authors (list, required): List of authors to choose from. Defaults to [None].
-        data_path (str, optional): The path to the data dir. Defaults to "../compute/gutenberg/data/".
-
-    Returns:
-        AuthorshipPairDataset: Dataset of random pairs
+        dataset_type (str): Dataset type ("train", "val", or "test")
+        dataset_size (int): Number of pairs to generate for the dataset.
+        authors (list): List of authors to choose from.
+        split_size (int, optional): Number of pairs per segment file. Defaults to 10000
+        data_path (str, optional): The path to the data dir. Defaults to "../compute/gutenberg/data"
     """
-    pairs = [
-        get_random_pair(authors, tokenizer, data_path) for _ in range(dataset_size)
-    ]
-    text_data1, text_data2, labels = zip(*pairs)
-
-    ds = AuthorshipPairDataset(text_data1, text_data2, labels)
-    return ds
+    segment_count = dataset_size // split_size
+    leftover = dataset_size % split_size
+    if leftover != 0:
+        segment_count += 1
+    dataset_path = os.path.join(data_path, dataset_type)
+    if not os.path.exists(dataset_path):
+        os.mkdir(dataset_path)
+    for i in range(segment_count):
+        df = pd.DataFrame(columns=["text1", "text2", "label"])
+        if i == segment_count - 1:
+            split_size = leftover
+        for _ in range(split_size):
+            text1, text2, label = get_random_pair(authors, data_path)
+            df = pd.concat(
+                [
+                    df,
+                    pd.DataFrame(
+                        {"text1": [text1], "text2": [text2], "label": [label]}
+                    ),
+                ]
+            )
+        file_path = os.path.join(dataset_path, f"{dataset_type}_{i}.csv")
+        df.to_csv(file_path, index=False)
 
 
 def authorship_split(
@@ -208,7 +188,7 @@ def authorship_split(
     train_percent: float = 0.8,
     val_percent: float = 0.1,
     test_percent: float = 0.1,
-    data_path: str = "../compute/gutenberg/data/",
+    data_path: str = "../compute/gutenberg/data",
 ) -> None:
     """Generates three datasets for training, validation, and testing
 
@@ -217,7 +197,7 @@ def authorship_split(
         train_percent (float, optional): Percent of dataset to use for training. Defaults to 0.8.
         val_percent (float, optional): Percent of dataset to use for validation. Defaults to 0.1.
         test_percent (float, optional): Percent of dataset to use for testing. Defaults to 0.1.
-        data_path (str, optional): The path to the data dir. Defaults to "../compute/gutenberg/data/".
+        data_path (str, optional): The path to the data dir. Defaults to "../compute/gutenberg/data"
     """
     authorship_path = os.path.join(data_path, "en_by_author/")
     authors = [
@@ -236,25 +216,15 @@ def authorship_split(
     train_authors = authors[:train_size]
     val_authors = authors[train_size : train_size + val_size]
     test_authors = authors[train_size + val_size :]
-
-    tokenizer = RobertaTokenizer.from_pretrained("roberta-large")
-
-    train_ds = generate_dataset(
-        tokenizer, int(dataset_size * train_percent), train_authors, data_path
+    generate_dataset(
+        "train", int(dataset_size * train_percent), train_authors, 10000, data_path
     )
-    val_ds = generate_dataset(
-        tokenizer, int(dataset_size * val_percent), val_authors, data_path
+    generate_dataset(
+        "val", int(dataset_size * val_percent), val_authors, 10000, data_path
     )
-    test_ds = generate_dataset(
-        tokenizer, int(dataset_size * test_percent), test_authors, data_path
+    generate_dataset(
+        "test", int(dataset_size * test_percent), test_authors, 10000, data_path
     )
-
-    with open(os.path.join(data_path, "datasets", "train.pkl"), "wb") as f:
-        pickle.dump(train_ds, f)
-    with open(os.path.join(data_path, "datasets", "val.pkl"), "wb") as f:
-        pickle.dump(val_ds, f)
-    with open(os.path.join(data_path, "datasets", "test.pkl"), "wb") as f:
-        pickle.dump(test_ds, f)
 
 
 if __name__ == "__main__":
