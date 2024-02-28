@@ -6,8 +6,8 @@ import os
 import random
 import re
 import pandas as pd
+from multiprocessing import Pool
 
-random.seed(42)
 
 def group_by_author(data_path: str = "../compute/gutenberg/data") -> None:
     """Gets all English books, and writes them to a file with the author of the book as the title
@@ -139,12 +139,37 @@ def get_random_pair(
     return text1, text2, 1
 
 
+def generate_segment(
+    segment_index,
+    segment_count,
+    split_size,
+    leftover,
+    authors,
+    dataset_type,
+    dataset_path,
+    data_path,
+):
+    df = pd.DataFrame(columns=["text1", "text2", "label"])
+    segment_size = split_size if segment_index != segment_count - 1 else leftover
+    for _ in range(segment_size):
+        text1, text2, label = get_random_pair(authors, data_path)
+        df = pd.concat(
+            [
+                df,
+                pd.DataFrame({"text1": [text1], "text2": [text2], "label": [label]}),
+            ]
+        )
+    file_path = os.path.join(dataset_path, f"{dataset_type}_{segment_index}.csv")
+    df.to_csv(file_path, index=False)
+
+
 def generate_dataset(
     dataset_type: str,
     dataset_size: int,
     authors: list,
-    split_size: int = 10000,
+    split_size: int = 1000,
     data_path: str = "../compute/gutenberg/data",
+    num_processes=os.cpu_count(),
 ) -> None:
     """Generates a dataset of random pairs
     For each pair:
@@ -155,7 +180,7 @@ def generate_dataset(
         dataset_type (str): Dataset type ("train", "val", or "test")
         dataset_size (int): Number of pairs to generate for the dataset.
         authors (list): List of authors to choose from.
-        split_size (int, optional): Number of pairs per segment file. Defaults to 10000
+        split_size (int, optional): Number of pairs per segment file. Defaults to 1000
         data_path (str, optional): The path to the data dir. Defaults to "../compute/gutenberg/data"
     """
     segment_count = dataset_size // split_size
@@ -165,22 +190,24 @@ def generate_dataset(
     dataset_path = os.path.join(data_path, dataset_type)
     if not os.path.exists(dataset_path):
         os.mkdir(dataset_path)
-    for i in range(segment_count):
-        df = pd.DataFrame(columns=["text1", "text2", "label"])
-        if i == segment_count - 1:
-            split_size = leftover
-        for _ in range(split_size):
-            text1, text2, label = get_random_pair(authors, data_path)
-            df = pd.concat(
-                [
-                    df,
-                    pd.DataFrame(
-                        {"text1": [text1], "text2": [text2], "label": [label]}
-                    ),
-                ]
-            )
-        file_path = os.path.join(dataset_path, f"{dataset_type}_{i}.csv")
-        df.to_csv(file_path, index=False)
+
+    with Pool(num_processes) as pool:
+        pool.starmap(
+            generate_segment,
+            [
+                (
+                    i,
+                    segment_count,
+                    split_size,
+                    leftover,
+                    authors,
+                    dataset_type,
+                    dataset_path,
+                    data_path,
+                )
+                for i in range(segment_count)
+            ],
+        )
 
 
 def authorship_split(
@@ -204,7 +231,6 @@ def authorship_split(
         f[:-5] if f.endswith("..txt") else f[:-4] for f in os.listdir(authorship_path)
     ]
     author_count = len(authors)
-
     train_size = int(train_percent * author_count)
     val_size = int(val_percent * author_count)
     test_size = int(test_percent * author_count)

@@ -2,6 +2,9 @@
 venv/
 .venv/
 
+# Cache
+__pycache__/
+
 # Job Runner Files
 slurm*
 run_job.sh
