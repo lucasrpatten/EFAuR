@@ -1,12 +1,14 @@
 """
 Combines all (English) books by author into one file per author
+
+Author: Lucas Patten
 """
 
 import os
 import random
 import re
-import pandas as pd
 from multiprocessing import Pool
+import pandas as pd
 
 
 def group_by_author(data_path: str = "../compute/gutenberg/data") -> None:
@@ -78,8 +80,8 @@ def split_text(
         return memo[file_path]
     with open(file_path, "r", encoding="utf-8") as f:
         text = f.read()
-    sentences = re.split(r"(?<=[.!?]) +", text)
-    sentences = [s.strip() + p for s, p in zip(sentences, re.findall(r"[.!?]", text))]
+    sentences = re.split(r"(\.|\!|\?)", text)
+    sentences = [s.strip() + p for s, p in zip(sentences[0::2], sentences[1::2])]
     memo[file_path] = sentences
     return sentences
 
@@ -97,12 +99,25 @@ def get_single_data(texts: list, max_length=512) -> str:
     text_len = random.randint(12, max_length)
     text_idx = random.randint(0, len(texts))
     text = texts[text_idx]
+    i = 1
     while (
-        len(texts[text_idx].split()) < text_len
-        and text_idx + 1 < len(texts)
-        and len(texts[text_idx].split() + texts[text_idx + 1].split()) <= text_len
+        len(text.split()) < text_len
+        and text_idx + i < len(texts)
+        and len(text.split() + texts[text_idx + i].split()) <= text_len
     ):
-        text += " " + texts[text_idx + 1]
+        text += " " + texts[text_idx + i]
+        if (
+            "gutenberg" in text.lower()
+            or (i > 20 and text_len < 130)
+            or (i > 50 and text_len < 350)
+            or (i > 100 and text_len > 350)
+        ):
+            text_idx = random.randint(0, len(texts))
+            print(text_idx)
+            text = texts[text_idx-4]
+            i = 1
+        else:
+            i += 1
     return text
 
 
@@ -167,9 +182,9 @@ def generate_dataset(
     dataset_type: str,
     dataset_size: int,
     authors: list,
-    split_size: int = 1000,
+    split_size: int = 10000,
     data_path: str = "../compute/gutenberg/data",
-    num_processes=os.cpu_count(),
+    num_processes=4,
 ) -> None:
     """Generates a dataset of random pairs
     For each pair:
@@ -180,14 +195,14 @@ def generate_dataset(
         dataset_type (str): Dataset type ("train", "val", or "test")
         dataset_size (int): Number of pairs to generate for the dataset.
         authors (list): List of authors to choose from.
-        split_size (int, optional): Number of pairs per segment file. Defaults to 1000
+        split_size (int, optional): Number of pairs per segment file. Defaults to 10000
         data_path (str, optional): The path to the data dir. Defaults to "../compute/gutenberg/data"
     """
     segment_count = dataset_size // split_size
     leftover = dataset_size % split_size
     if leftover != 0:
         segment_count += 1
-    dataset_path = os.path.join(data_path, dataset_type)
+    dataset_path = os.path.join('/home/lucasrp/compute/gutenberg/data', dataset_type)
     if not os.path.exists(dataset_path):
         os.mkdir(dataset_path)
 

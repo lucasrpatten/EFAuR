@@ -1,3 +1,9 @@
+"""
+Pytorch Dataset For Authorship Pairs
+
+Written by Lucas Patten
+"""
+
 import os
 import torch
 from torch.utils.data import Dataset
