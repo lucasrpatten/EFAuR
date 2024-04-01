@@ -8,7 +8,7 @@ import csv
 import logging
 import os
 import tarfile
-import xml.etree.ElementTree as ElementTree
+from xml.etree import ElementTree
 import requests
 
 XML_NAMESPACES = dict(
@@ -23,7 +23,6 @@ XML_NAMESPACES = dict(
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
-logging.getLogger().setLevel(logging.INFO)
 
 FIELDS = (
     "id",
@@ -77,7 +76,7 @@ def parse_rdf(path: str, metadata_dir: str = "/home/lucasrp/compute/tmp/metadata
         return
     assert isinstance(author.text, str)
     if any(
-        a in author.text.lower() for a in ("anonymous", "various")
+        a in author.text.lower() for a in ("anonymous", "various", "unknown")
     ):  # Not interested in anonymous authors
         return
     metadata["author"] = author.text
@@ -107,8 +106,8 @@ def parse_rdf(path: str, metadata_dir: str = "/home/lucasrp/compute/tmp/metadata
         writer.writerow(metadata)
 
 
-def get_metadata(extract_dir: str = "/home/lucasrp/compute/tmp/"):
-    metadata_dir = os.path.join(extract_dir, "metadata")
+def get_metadata(data_dir: str = "/home/lucasrp/compute/tmp/"):
+    metadata_dir = os.path.join(data_dir, "metadata")
 
     if not os.path.exists(metadata_dir):
         os.makedirs(metadata_dir)
@@ -125,12 +124,12 @@ def get_metadata(extract_dir: str = "/home/lucasrp/compute/tmp/"):
             target_path = os.path.join(metadata_dir, member.name)
             if not os.path.exists(target_path):
                 tar.extract(member, metadata_dir, filter=tarfile.tar_filter)
-                logging.info("Extracted %s", member.name)
+                logging.debug("Extracted %s", member.name)
                 if member.isfile() and member.name.endswith(".rdf"):
                     parse_rdf(target_path, metadata_dir)
             else:
                 logging.debug("Skipping %s, already exists", member.name)
 
 
-# get_tarball()
+get_tarball()
 get_metadata()
