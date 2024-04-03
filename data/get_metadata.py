@@ -31,6 +31,7 @@ FIELDS = (
 
 
 def get_tarball():
+    """Downloads the RDF Metadata tarball to /tmp/rdf-files.tar.bz2"""
     logging.info("Downloading EFAuR metadata tarball...")
     url = "http://www.gutenberg.org/cache/epub/feeds/rdf-files.tar.bz2"
     with requests.get(url, timeout=15, stream=True) as r:
@@ -40,7 +41,13 @@ def get_tarball():
                 f.write(chunk)
 
 
-def parse_rdf(path: str, metadata_dir: str = "/home/lucasrp/compute/tmp/metadata"):
+def parse_rdf(path: str, metadata_dir: str):
+    """Parses the RDF Metadata and gets the valid books and writes them to metadata.csv
+
+    Args:
+        path (str): Path of rdf file inside tarball
+        metadata_dir (str): Base path of metadata directory
+    """
     metadata = dict.fromkeys(FIELDS)
     tree = ElementTree.parse(path)
     root = tree.getroot()
@@ -107,6 +114,11 @@ def parse_rdf(path: str, metadata_dir: str = "/home/lucasrp/compute/tmp/metadata
 
 
 def get_metadata(data_dir: str = "/home/lucasrp/compute/tmp/"):
+    """Extracts metadata tarball and updates metadata information in metadata.csv
+
+    Args:
+        data_dir (str, optional): Base path of data directory. Defaults to "/home/lucasrp/compute/tmp/".
+    """
     metadata_dir = os.path.join(data_dir, "metadata")
 
     if not os.path.exists(metadata_dir):
@@ -122,6 +134,7 @@ def get_metadata(data_dir: str = "/home/lucasrp/compute/tmp/"):
     with tarfile.open("/tmp/rdf-files.tar.bz2", "r:bz2") as tar:
         for member in tar.getmembers():
             target_path = os.path.join(metadata_dir, member.name)
+            # If the file is already extracted, skip, otherwise extract and parse rdf
             if not os.path.exists(target_path):
                 tar.extract(member, metadata_dir, filter=tarfile.tar_filter)
                 logging.debug("Extracted %s", member.name)
