@@ -109,7 +109,7 @@ def parse_rdf(path: str, metadata_dir: str):
         writer.writerow(metadata)
 
 
-def get_metadata(data_dir: str):
+def extract_metadata(data_dir: str):
     """Extracts metadata tarball and updates metadata information in metadata.csv
 
     Args:

@@ -8,7 +8,7 @@ import argparse
 import logging
 
 from get_data import by_author, mirror_data
-from get_metadata import get_metadata, get_tarball
+from get_metadata import extract_metadata, get_tarball
 from generate_dataset import generate_dataset
 
 
@@ -60,7 +60,7 @@ def argument_parsing():
     actions.add_argument("--process", action="store_true", help="Process data")
     actions.add_argument("--mirror-data", action="store_true", help="Mirror data")
     actions.add_argument("--get-tarball", action="store_true", help="Get tarball")
-    actions.add_argument("--get-metadata", action="store_true", help="Get metadata")
+    actions.add_argument("--extract-metadata", action="store_true", help="Extract metadata")
     actions.add_argument("--by-author", action="store_true", help="By author")
     actions.add_argument(
         "--generate-dataset", action="store_true", help="Generate dataset"
@@ -88,8 +88,8 @@ def argument_parsing():
         mirror_data(args.data_dir)
     if args.get_tarball:
         get_tarball()
-    if args.get_metadata:
-        get_metadata(args.data_dir)
+    if args.extract_metadata:
+        extract_metadata(args.data_dir)
     if args.by_author:
         by_author(args.data_dir)
     if args.generate_dataset:
@@ -102,7 +102,7 @@ def argument_parsing():
             num_processes=args.thread_count,
         )
     if args.offline_only:
-        get_metadata(args.data_dir)
+        extract_metadata(args.data_dir)
         by_author(args.data_dir)
         generate_dataset(
             args.data_dir,
@@ -115,7 +115,7 @@ def argument_parsing():
     if args.all:
         mirror_data(args.data_dir)
         get_tarball()
-        get_metadata(args.data_dir)
+        extract_metadata(args.data_dir)
         by_author(args.data_dir)
         generate_dataset(
             args.data_dir,

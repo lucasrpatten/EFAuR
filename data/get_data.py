@@ -22,11 +22,11 @@ def mirror_data(data_dir: str):
     mirror_dir = os.path.join(data_dir, ".mirror")
     if not os.path.exists(mirror_dir):
         os.makedirs(mirror_dir)
-
-    vstring = "v"
+    logging.info("Mirroring data to %r", mirror_dir)
+    verbose = "v" if logging.getLogger().getEffectiveLevel() < logging.INFO else ""
     sp_args = [
         "rsync",
-        f"-am{vstring}",
+        f"-am{verbose}",
         "--include",
         "*/",
         "--include",
@@ -36,7 +36,6 @@ def mirror_data(data_dir: str):
         "aleph.gutenberg.org::gutenberg",
         mirror_dir,
     ]
-    logging.info("Mirroring data to %r", mirror_dir)
     subprocess.call(sp_args)
 
 
