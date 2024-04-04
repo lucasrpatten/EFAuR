@@ -84,6 +84,9 @@ def argument_parsing():
     if args.download:
         mirror_data(args.data_dir)
         get_tarball()
+    if args.process:
+        extract_metadata(args.data_dir)
+        by_author(args.data_dir)
     if args.mirror_data:
         mirror_data(args.data_dir)
     if args.get_tarball:
