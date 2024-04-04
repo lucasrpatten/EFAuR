@@ -14,6 +14,7 @@ import re
 
 from concurrent.futures import ThreadPoolExecutor
 
+
 def authorship_split(
     authorship_dir: str,
     dataset_dir: str,
@@ -122,7 +123,9 @@ def get_random_pair(
     """
 
     if pair_number % 100 == 0:
-        logging.info("Generating pair %s of %s", pair_number, os.path.basename(pairs_dir))
+        logging.info(
+            "Generating pair %s of %s", pair_number, os.path.basename(pairs_dir)
+        )
 
     label = random.randint(0, 1)
     # same author
@@ -176,21 +179,21 @@ def generate_pairs(
 
 def generate_dataset(
     data_dir: str,
-    dataset_size: int = 100000,
-    train_percent: float = 0.8,
-    val_percent: float = 0.1,
-    test_percent: float = 0.1,
-    num_processes: int = 16,
+    dataset_size: int,
+    train_percent: float,
+    val_percent: float,
+    test_percent: float,
+    num_processes: int,
 ):
     """Generates three datasets for training, validation, and testing
 
     Args:
         data_dir (str): Base path of data dir.
-        dataset_size (int, optional): Total number of pairs for all datasets. Defaults to 100000.
-        train_percent (float, optional): Percent of dataset to use for training. Defaults to 0.8.
-        val_percent (float, optional): Percent of dataset to use for validation. Defaults to 0.1.
-        test_percent (float, optional): Percent of dataset to use for testing. Defaults to 0.1.
-        num_processes (int, optional): Number of processes to use. Defaults to 16.
+        dataset_size (int): Total number of pairs for all datasets.
+        train_percent (float): Percent of dataset to use for training.
+        val_percent (float): Percent of dataset to use for validation.
+        test_percent (float): Percent of dataset to use for testing.
+        num_processes (int): Number of processes to use.
     """
     assert train_percent + val_percent + test_percent == 1
 
@@ -202,17 +205,30 @@ def generate_dataset(
         authorship_dir, dataset_dir, train_percent, val_percent, test_percent
     )
 
+    train_size = int(dataset_size * train_percent)
+    val_size = int(dataset_size * val_percent)
+    test_size = int(dataset_size * test_percent)
+
+    diff = dataset_size - (train_size + val_size + test_size)
+    if diff > 0:
+        train_size += diff
+    elif diff < 0:
+        if val_size > 0:
+            val_size += diff
+        else:
+            test_size += diff
+
     logging.info("Generating training dataset...")
     generate_pairs(
-        authorship_dir, dataset_dir, "train", dataset_size, train_authors, num_processes
+        authorship_dir, dataset_dir, "train", train_size, train_authors, num_processes
     )
     logging.info("Generating validation dataset...")
     generate_pairs(
-        authorship_dir, dataset_dir, "val", dataset_size, val_authors, num_processes
+        authorship_dir, dataset_dir, "val", val_size, val_authors, num_processes
     )
     logging.info("Generating test dataset...")
     generate_pairs(
-        authorship_dir, dataset_dir, "test", dataset_size, test_authors, num_processes
+        authorship_dir, dataset_dir, "test", test_size, test_authors, num_processes
     )
 
     logging.info("Dataset Directory Population at %s Complete", dataset_dir)

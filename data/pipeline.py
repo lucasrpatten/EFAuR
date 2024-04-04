@@ -7,9 +7,9 @@ Author: Lucas Patten
 import argparse
 import logging
 
-from data.get_data import by_author, mirror_data
-from data.get_metadata import get_metadata, get_tarball
-from data.generate_dataset import generate_dataset
+from get_data import by_author, mirror_data
+from get_metadata import get_metadata, get_tarball
+from generate_dataset import generate_dataset
 
 
 def argument_parsing():
@@ -42,6 +42,15 @@ def argument_parsing():
         default=16,
         help="Number of threads to use (only applicable for --generate-dataset)",
     )
+
+    parser.add_argument("--dataset_size", type=int, default=100000, help="Dataset size")
+    parser.add_argument(
+        "--train_percent", type=float, default=0.8, help="Training percent"
+    )
+    parser.add_argument(
+        "--val_percent", type=float, default=0.1, help="Validation percent"
+    )
+    parser.add_argument("--test_percent", type=float, default=0.1, help="Test percent")
 
     actions = parser.add_mutually_exclusive_group()
 
@@ -84,17 +93,39 @@ def argument_parsing():
     if args.by_author:
         by_author(args.data_dir)
     if args.generate_dataset:
-        generate_dataset(args.data_dir, num_processes=args.thread_count)
+        generate_dataset(
+            args.data_dir,
+            dataset_size=args.dataset_size,
+            train_percent=args.train_percent,
+            val_percent=args.val_percent,
+            test_percent=args.test_percent,
+            num_processes=args.thread_count,
+        )
     if args.offline_only:
         get_metadata(args.data_dir)
         by_author(args.data_dir)
-        generate_dataset(args.data_dir, num_processes=args.thread_count)
+        generate_dataset(
+            args.data_dir,
+            dataset_size=args.dataset_size,
+            train_percent=args.train_percent,
+            val_percent=args.val_percent,
+            test_percent=args.test_percent,
+            num_processes=args.thread_count,
+        )
     if args.all:
         mirror_data(args.data_dir)
         get_tarball()
         get_metadata(args.data_dir)
         by_author(args.data_dir)
-        generate_dataset(args.data_dir, num_processes=args.thread_count)
+        generate_dataset(
+            args.data_dir,
+            dataset_size=args.dataset_size,
+            train_percent=args.train_percent,
+            val_percent=args.val_percent,
+            test_percent=args.test_percent,
+            num_processes=args.thread_count,
+        )
+
 
 if __name__ == "__main__":
     argument_parsing()
