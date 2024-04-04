@@ -20,10 +20,6 @@ XML_NAMESPACES = dict(
     dcam="http://purl.org/dc/dcam/",
 )
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-)
-
 FIELDS = (
     "id",
     "author",
@@ -113,11 +109,11 @@ def parse_rdf(path: str, metadata_dir: str):
         writer.writerow(metadata)
 
 
-def get_metadata(data_dir: str = "/home/lucasrp/compute/tmp/"):
+def get_metadata(data_dir: str):
     """Extracts metadata tarball and updates metadata information in metadata.csv
 
     Args:
-        data_dir (str, optional): Base path of data directory. Defaults to "/home/lucasrp/compute/tmp/".
+        data_dir (str): Base path of data directory.
     """
     metadata_dir = os.path.join(data_dir, "metadata")
 
@@ -142,7 +138,3 @@ def get_metadata(data_dir: str = "/home/lucasrp/compute/tmp/"):
                     parse_rdf(target_path, metadata_dir)
             else:
                 logging.debug("Skipping %s, already exists", member.name)
-
-
-get_tarball()
-get_metadata()

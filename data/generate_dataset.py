@@ -6,13 +6,13 @@ Author: Lucas Patten
 """
 
 import json
+import logging
 import os
 import random
 import pickle
 import re
 
 from concurrent.futures import ThreadPoolExecutor
-
 
 def authorship_split(
     authorship_dir: str,
@@ -34,6 +34,7 @@ def authorship_split(
     Returns:
         tuple[list[str], list[str], list[str]]: train_authors, val_authors, test_authors
     """
+    logging.info("Splitting authors into training, validation, and test authors...")
     authors = [
         f[:-4]  # Remove .txt for all authors in the directory
         for f in os.listdir(authorship_dir)
@@ -120,6 +121,9 @@ def get_random_pair(
         authors (list): List of authors to choose from
     """
 
+    if pair_number % 100 == 0:
+        logging.info("Generating pair %s of %s", pair_number, os.path.basename(pairs_dir))
+
     label = random.randint(0, 1)
     # same author
     if label == 0:
@@ -171,7 +175,7 @@ def generate_pairs(
 
 
 def generate_dataset(
-    data_dir: str = "/home/lucasrp/compute/tmp/data",
+    data_dir: str,
     dataset_size: int = 100000,
     train_percent: float = 0.8,
     val_percent: float = 0.1,
@@ -181,7 +185,7 @@ def generate_dataset(
     """Generates three datasets for training, validation, and testing
 
     Args:
-        data_dir (str, optional): Base path of data dir. Defaults to "/home/lucasrp/compute/tmp/data".
+        data_dir (str): Base path of data dir.
         dataset_size (int, optional): Total number of pairs for all datasets. Defaults to 100000.
         train_percent (float, optional): Percent of dataset to use for training. Defaults to 0.8.
         val_percent (float, optional): Percent of dataset to use for validation. Defaults to 0.1.
@@ -192,16 +196,23 @@ def generate_dataset(
 
     authorship_dir = os.path.join(data_dir, "by_author")
     dataset_dir = os.path.join(data_dir, "dataset")
+    if not os.path.exists(dataset_dir):
+        os.makedirs(dataset_dir)
     train_authors, val_authors, test_authors = authorship_split(
         authorship_dir, dataset_dir, train_percent, val_percent, test_percent
     )
 
+    logging.info("Generating training dataset...")
     generate_pairs(
         authorship_dir, dataset_dir, "train", dataset_size, train_authors, num_processes
     )
+    logging.info("Generating validation dataset...")
     generate_pairs(
         authorship_dir, dataset_dir, "val", dataset_size, val_authors, num_processes
     )
+    logging.info("Generating test dataset...")
     generate_pairs(
         authorship_dir, dataset_dir, "test", dataset_size, test_authors, num_processes
     )
+
+    logging.info("Dataset Directory Population at %s Complete", dataset_dir)

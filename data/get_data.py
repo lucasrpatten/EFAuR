@@ -12,16 +12,12 @@ import os
 
 from urllib.parse import quote
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-)
 
-
-def mirror_data(data_dir: str = "/home/lucasrp/compute/tmp"):
+def mirror_data(data_dir: str):
     """Mirrors the data from the Project Gutenberg Corpus
 
     Args:
-        data_dir (str, optional): Base path of data directory. Defaults to "/home/lucasrp/compute/tmp".
+        data_dir (str): Base path of data directory
     """
     mirror_dir = os.path.join(data_dir, ".mirror")
     if not os.path.exists(mirror_dir):
@@ -40,11 +36,20 @@ def mirror_data(data_dir: str = "/home/lucasrp/compute/tmp"):
         "aleph.gutenberg.org::gutenberg",
         mirror_dir,
     ]
-
+    logging.info("Mirroring data to %r", mirror_dir)
     subprocess.call(sp_args)
 
 
 def clean_book(book: str, book_id: str):
+    """Removes PG header and footer
+
+    Args:
+        book (str): Book to clean
+        book_id (str): Book ID to use in logging messages
+
+    Returns:
+        (str | None): Cleaned book or None on failure
+    """
 
     start_pattern = r"\*\*\* START OF (THIS|THE) PROJECT GUTENBERG.*\*\*\*"
     end_pattern = r"\*\*\* END OF (THIS|THE) PROJECT GUTENBERG"
@@ -60,10 +65,18 @@ def clean_book(book: str, book_id: str):
         return None
     book = split_book[0]
 
+    # Remove newlines because readability formatting could mess with model
+    book = book.replace("\n", " ")
+
     return book
 
 
-def by_author(data_dir: str = "/home/lucasrp/compute/tmp/"):
+def by_author(data_dir: str):
+    """Puts all books by author in a single file
+
+    Args:
+        data_dir (str): Base path of data directory.
+    """
     mirror_dir = os.path.join(data_dir, ".mirror", "cache", "epub")
     author_dir = os.path.join(data_dir, "by_author")
     metadata_dir = os.path.join(data_dir, "metadata")
@@ -105,6 +118,3 @@ def by_author(data_dir: str = "/home/lucasrp/compute/tmp/"):
                 ) as f:
                     f.write(cleaned_book + "\n")
         logging.info("Successfully processed %d books", books_processed)
-
-
-by_author()
