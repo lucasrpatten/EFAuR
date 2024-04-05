@@ -49,25 +49,22 @@ def clean_book(book: str, book_id: str):
     Returns:
         (str | None): Cleaned book or None on failure
     """
-
-    start_pattern = r"\*\*\* START OF (THIS|THE) PROJECT GUTENBERG.*\*\*\*"
-    end_pattern = r"\*\*\* END OF (THIS|THE) PROJECT GUTENBERG"
-
-    split_book = re.split(start_pattern, book, flags=re.IGNORECASE)
-    if len(split_book) < 2:
+    start_pattern = r"\*\*\* START OF (?:THIS|THE) PROJECT GUTENBERG.*\*\*\*"
+    end_pattern = r"\*\*\* END OF (?:THIS|THE) PROJECT GUTENBERG"
+    
+    start_match = re.search(start_pattern, book)
+    end_match = re.search(end_pattern, book)
+    if start_match and end_match:
+        start_pos = start_match.end()
+        end_pos = end_match.start()
+        split_book = book[start_pos:end_pos]
+    else:
         logging.warning("Failed to parse book %s", book_id)
         return None
-    book = split_book[1]
-    split_book = re.split(end_pattern, book, flags=re.IGNORECASE)
-    if len(split_book) < 2:
-        logging.warning("Failed to parse book %s", book_id)
-        return None
-    book = split_book[0]
-
     # Remove newlines because readability formatting could mess with model
-    book = book.replace("\n", " ")
+    split_book = split_book.replace("\n", " ")
 
-    return book
+    return split_book
 
 
 def by_author(data_dir: str):

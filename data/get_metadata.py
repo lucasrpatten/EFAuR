@@ -48,7 +48,6 @@ def parse_rdf(path: str, metadata_dir: str):
     tree = ElementTree.parse(path)
     root = tree.getroot()
     ebook = root.find("{%(pgterms)s}ebook" % XML_NAMESPACES)
-    print(ebook)
     if ebook is None:
         return
 
@@ -57,7 +56,6 @@ def parse_rdf(path: str, metadata_dir: str):
     if rights is None:
         return
     assert isinstance(rights.text, str)
-    print(rights.text)
 
     if "public domain" not in rights.text.lower():
         return
