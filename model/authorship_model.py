@@ -26,9 +26,9 @@ class Swish(nn.Module):
 class SiameseAuthorshipModel(nn.Module):
     def __init__(self):
         super().__init__()
-        self.roberta = RobertaModel.from_pretrained("roberta-large")
+        self.roberta = RobertaModel.from_pretrained("roberta-base")
         self.ff_layers = nn.Sequential(
-            nn.Linear(1024, 512),
+            nn.Linear(768, 512),
             nn.LeakyReLU(),
             nn.Linear(512, 256),
             Swish(),
@@ -37,19 +37,19 @@ class SiameseAuthorshipModel(nn.Module):
             nn.Linear(128, 64),
         )
 
-    def forward(self, inputs1, inputs2) -> torch.Tensor:
-        input1_ids = inputs1["input_ids"]
-        input1_mask = inputs1["attention_mask"]
+    def forward(self, input1, input2) -> torch.Tensor:
+        input1_ids = input1["input_ids"].squeeze(1)
+        input1_mask = input1["attention_mask"].squeeze(1)
 
-        input2_ids = inputs2["input_ids"]
-        input2_mask = inputs2["attention_mask"]
+        input2_ids = input2["input_ids"].squeeze(1)
+        input2_mask = input2["attention_mask"].squeeze(1)
 
         cls_embedding_1 = self.roberta(
             input_ids=input1_ids, attention_mask=input1_mask
-        )["last_hidden_state"][:, 0, :]
+        )["last_hidden_state"][:, 0, :] # type: ignore
         cls_embedding_2 = self.roberta(
             input_ids=input2_ids, attention_mask=input2_mask
-        )["last_hidden_state"][:, 0, :]
+        )["last_hidden_state"][:, 0, :] # type: ignore
 
         output1 = self.ff_layers(cls_embedding_1)
         output2 = self.ff_layers(cls_embedding_2)

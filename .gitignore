@@ -8,3 +8,6 @@ __pycache__/
 # Job Runner Files
 slurm*
 run_job.sh
+
+# Memory/Core Dumps
+core.*

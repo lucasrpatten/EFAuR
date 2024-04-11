@@ -51,7 +51,7 @@ def clean_book(book: str, book_id: str):
     """
     start_pattern = r"\*\*\* START OF (?:THIS|THE) PROJECT GUTENBERG.*\*\*\*"
     end_pattern = r"\*\*\* END OF (?:THIS|THE) PROJECT GUTENBERG"
-    
+
     start_match = re.search(start_pattern, book)
     end_match = re.search(end_pattern, book)
     if start_match and end_match:
@@ -95,7 +95,7 @@ def by_author(data_dir: str):
                     continue
 
             logging.debug("Processing %s", book_id)
-            with open(book_path, "r", encoding="latin-1") as f:
+            with open(book_path, "r", encoding="utf-8") as f:
                 book = f.read()
             cleaned_book = clean_book(book, book_id)
             if cleaned_book is None:

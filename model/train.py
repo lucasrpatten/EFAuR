@@ -21,11 +21,12 @@ def ddp_setup():
 
 
 def accuracy(pred: torch.Tensor, labels: torch.Tensor):
-    predictions = torch.Tensor(1 if p >= 0.8 else 0 for p in pred)
+    device=labels.get_device()
+    predictions = torch.Tensor([1 if p >= 0.8 else 0 for p in pred]).float().cuda(device)
     correct_predictions = (predictions == labels).sum().item()
 
     total_predictions = labels.size(0)
-    return torch.Tensor(correct_predictions / total_predictions)
+    return correct_predictions / total_predictions
 
 
 class Trainer:
@@ -67,7 +68,7 @@ class Trainer:
                     "Snapshot %s does not exist, starting from epoch 1", checkpoint_path
                 )
         self.writer = SummaryWriter(log_dir)
-        self.model = DDP(self.model, device_ids=[self.gpu_id])
+        self.model = DDP(self.model, device_ids=[self.gpu_id], find_unused_parameters=True)
 
     def _save_snapshot(self, epoch: int):
         snapshot = {
@@ -87,17 +88,17 @@ class Trainer:
         self.optimizer.load_state_dict(snapshot["OPTIMIZER_STATE"])
         logging.info("Resuming training from snapshot at Epoch %s", self.epochs_run)
 
-    def _run_batch(self, source, targets):
+    def _run_batch(self, source1, source2, targets):
         self.optimizer.zero_grad()
-        output = self.model(source)
+        output = self.model(source1, source2)
         loss = F.cross_entropy(output, targets)
         loss.backward()
         self.optimizer.step()
 
-        return loss.item(), accuracy(output, targets).item()
+        return loss.item(), accuracy(output, targets)
 
     def _run_epoch(self, epoch):
-        batch_size = len(next(iter(self.train_data))[0])
+        batch_size = len(next(iter(self.train_data))[1])
         logging.info(
             "[GPU:%s] Epoch %s | Batchsize %s | Steps %s",
             self.gpu_id,
@@ -111,11 +112,12 @@ class Trainer:
         total_samples = 0
 
         self.train_data.sampler.set_epoch(epoch)  # type: ignore
-        for source, targets in self.train_data:
-            source = source.to(self.gpu_id)
+        for source1, source2, targets in self.train_data:
+            source1 = source1.to(self.gpu_id)
+            source2 = source2.to(self.gpu_id)
             targets = targets.to(self.gpu_id)
-            batch_loss, acc = self._run_batch(source, targets)
-            batch_size = source.size(0)
+            batch_loss, acc = self._run_batch(source1, source2, targets)
+            batch_size = len(source1)
             total_acc += acc * batch_size
             total_samples += batch_size
             total_loss += batch_loss * batch_size
@@ -143,14 +145,15 @@ class Trainer:
             total_acc = 0.0
             total_samples = 0
 
-            for source, targets in self.val_data:
-                source = source.to(self.gpu_id)
+            for source1, source2, targets in self.val_data:
+                source1 = source1.to(self.gpu_id)
+                source2 = source2.to(self.gpu_id)
                 targets = targets.to(self.gpu_id)
-                output = self.model(source)
+                output = self.model(source1, source2)
                 loss = F.cross_entropy(output, targets)
                 acc = accuracy(output, targets)
 
-                batch_size = source.size(0)
+                batch_size = len(source1)
                 total_acc += acc * batch_size
                 total_samples += batch_size
                 total_loss += loss * batch_size
@@ -178,7 +181,10 @@ class Trainer:
                 self._save_snapshot(epoch)
 
 
-def train(batch_size: int = 128, epochs: int = 15, learning_rate: float = 0.0025):
+def train(batch_size: int = 2, epochs: int = 15, learning_rate: float = 0.0025):
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+    )
     ddp_setup()
     torch.set_grad_enabled(True)
     train_ds = AuthorshipPairDataset("/home/lucasrp/compute/gutenberg/dataset/train/")
