@@ -1,32 +1,59 @@
+"""
+Training Script(s) for the EFAuR model
+
+Author: Lucas Patten
+"""
+
 import logging
 import os
+from typing import Callable
 import torch
-import torch.distributed as distributed
 import torch.nn.functional as F
-import torch.optim as optim
 
+from torch import distributed
+from torch import optim
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard.writer import SummaryWriter
 from torch.utils.data.distributed import DistributedSampler
 from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.distributed import init_process_group, destroy_process_group
 from authorship_model import SiameseAuthorshipModel
 from dataset import AuthorshipPairDataset
+from metrics import Metrics  # pylint: disable=no-name-in-module
 
 
 def ddp_setup():
     """Sets up Distributed Data Parallel for training"""
-    init_process_group(backend="nccl")
+    distributed.init_process_group(backend="nccl")
     torch.cuda.set_device(int(os.environ["LOCAL_RANK"]))
 
 
-def accuracy(pred: torch.Tensor, labels: torch.Tensor):
-    device=labels.get_device()
-    predictions = torch.Tensor([1 if p >= 0.8 else 0 for p in pred]).float().cuda(device)
-    correct_predictions = (predictions == labels).sum().item()
+class AverageMeter:
+    def __init__(self, name: str, metric: Callable, writer: SummaryWriter) -> None:
+        self.name = name
+        self.metric = metric
+        self.writer = writer
+        self.val = self.avg = self.sum = self.count = 0
 
-    total_predictions = labels.size(0)
-    return correct_predictions / total_predictions
+    def reset(self):
+        self.val = 0
+        self.avg = 0
+        self.sum = 0
+        self.count = 0
+
+    def update(self, predictions, labels, n=1):
+        self.val = self.metric(predictions, labels)
+        self.sum += self.val * n
+        self.count += n
+        self.avg = self.sum / self.count
+
+    def all_reduce(self):
+        total = torch.tensor([self.sum, self.count]).cuda()
+        distributed.all_reduce(total, op=distributed.ReduceOp.SUM, async_op=False)
+        self.sum, self.count = total.tolist()
+        self.avg = self.sum / self.count
+
+    def write(self, epoch: int):
+        self.writer.add_scalar(self.name, self.avg, epoch)
 
 
 class Trainer:
@@ -68,13 +95,19 @@ class Trainer:
                     "Snapshot %s does not exist, starting from epoch 1", checkpoint_path
                 )
         self.writer = SummaryWriter(log_dir)
-        self.model = DDP(self.model, device_ids=[self.gpu_id], find_unused_parameters=True)
+        self.model = DDP(
+            self.model, device_ids=[self.gpu_id], find_unused_parameters=True
+        )
+
+        self.batch_count = 0
+        self.train_loss = 0.0
+        self.train_acc = AverageMeter("Accuracy/train", Metrics.accuracy, self.writer)
 
     def _save_snapshot(self, epoch: int):
         snapshot = {
-            "MODEL_STATE": self.model.module.state_dict(),
-            "EPOCHS_RUN": epoch,
+            "MODEL_STATE": self.model.state_dict(),
             "OPTIMIZER_STATE": self.optimizer.state_dict(),
+            "EPOCHS_RUN": epoch,
         }
         snapshot_path = os.path.join(self.checkpoint_dir, f"snapshot_{epoch}.pt")
         torch.save(snapshot, snapshot_path)
@@ -94,8 +127,9 @@ class Trainer:
         loss = F.cross_entropy(output, targets)
         loss.backward()
         self.optimizer.step()
-
-        return loss.item(), accuracy(output, targets)
+        self.train_loss += loss.item()
+        self.train_acc.update(output, targets, len(source1))
+        self.batch_count += 1
 
     def _run_epoch(self, epoch):
         batch_size = len(next(iter(self.train_data))[1])
@@ -107,70 +141,84 @@ class Trainer:
             len(self.train_data),
         )
 
-        total_loss = 0.0
-        total_acc = 0.0
-        total_samples = 0
-
         self.train_data.sampler.set_epoch(epoch)  # type: ignore
         for source1, source2, targets in self.train_data:
             source1 = source1.to(self.gpu_id)
             source2 = source2.to(self.gpu_id)
             targets = targets.to(self.gpu_id)
-            batch_loss, acc = self._run_batch(source1, source2, targets)
-            batch_size = len(source1)
-            total_acc += acc * batch_size
-            total_samples += batch_size
-            total_loss += batch_loss * batch_size
+            self._run_batch(source1, source2, targets)
 
         # Syncrhronize gradients processes
         distributed.barrier()
 
         # Sum the total loss across all GPUs
-        total_loss_tensor = torch.tensor(total_loss).cuda()
-        total_samples_tensor = torch.tensor(total_samples).cuda()
-        total_acc_tensor = torch.tensor(total_acc).cuda()
+        total_loss_tensor = torch.tensor(self.train_loss).cuda()
+        total_batches_tensor = torch.tensor(self.batch_count).cuda()
         distributed.all_reduce(total_loss_tensor, op=distributed.ReduceOp.SUM)
-        distributed.all_reduce(total_samples_tensor, op=distributed.ReduceOp.SUM)
-        distributed.all_reduce(total_acc_tensor, op=distributed.ReduceOp.SUM)
+        distributed.all_reduce(total_batches_tensor, op=distributed.ReduceOp.SUM)
+        average_loss = total_loss_tensor.item() / (
+            total_batches_tensor.item() * batch_size
+        )
+        self.writer.add_scalar("Loss/train", average_loss, epoch)
+        self.batch_count = 0
+        self.train_loss = 0.0
 
-        average_acc = total_acc_tensor.item() / total_samples_tensor.item()
-        average_loss = total_loss_tensor.item() / total_samples_tensor.item()
-        self.writer.add_scalar("AverageLoss/train", average_loss, epoch)
-        self.writer.add_scalar("AverageAccuracy/train", average_acc, epoch)
+        self.train_acc.all_reduce()
+        self.train_acc.write(epoch)
+        self.train_acc.reset()
 
     def _run_val(self, epoch):
         batch_size = len(next(iter(self.val_data))[0])
         with torch.no_grad():
-            total_loss = 0.0
-            total_acc = 0.0
-            total_samples = 0
+            loss = AverageMeter("Loss/val", Metrics.cross_entropy, self.writer)
+            acc = AverageMeter("Accuracy/val", Metrics.accuracy, self.writer)
+            precision = AverageMeter("Precision/val", Metrics.precision, self.writer)
+            recall = AverageMeter("Recall/val", Metrics.recall, self.writer)
+            f1 = AverageMeter("F1Score/val", Metrics.f1_score, self.writer)
+            mse = AverageMeter("MSE/val", Metrics.mse, self.writer)
+            mae = AverageMeter("MAE/val", Metrics.mae, self.writer)
+            rmse = AverageMeter("RMSE/val", Metrics.rmse, self.writer)
+            bce = AverageMeter(
+                "BinaryCrossEntropy/val", Metrics.binary_cross_entropy, self.writer
+            )
 
             for source1, source2, targets in self.val_data:
                 source1 = source1.to(self.gpu_id)
                 source2 = source2.to(self.gpu_id)
                 targets = targets.to(self.gpu_id)
-                output = self.model(source1, source2)
-                loss = F.cross_entropy(output, targets)
-                acc = accuracy(output, targets)
-
+                predictions = self.model(source1, source2)
                 batch_size = len(source1)
-                total_acc += acc * batch_size
-                total_samples += batch_size
-                total_loss += loss * batch_size
+                loss.update(predictions, targets, batch_size)
+                acc.update(predictions, targets, batch_size)
+                precision.update(predictions, targets, batch_size)
+                recall.update(predictions, targets, batch_size)
+                f1.update(predictions, targets, batch_size)
+                mse.update(predictions, targets, batch_size)
+                mae.update(predictions, targets, batch_size)
+                rmse.update(predictions, targets, batch_size)
+                bce.update(predictions, targets, batch_size)
 
             distributed.barrier()
 
-            total_loss_tensor = torch.tensor(total_loss).cuda()
-            total_samples_tensor = torch.tensor(total_samples).cuda()
-            total_acc_tensor = torch.tensor(total_acc).cuda()
-            distributed.all_reduce(total_loss_tensor, op=distributed.ReduceOp.SUM)
-            distributed.all_reduce(total_samples_tensor, op=distributed.ReduceOp.SUM)
-            distributed.all_reduce(total_acc_tensor, op=distributed.ReduceOp.SUM)
+            loss.all_reduce()
+            acc.all_reduce()
+            precision.all_reduce()
+            recall.all_reduce()
+            f1.all_reduce()
+            mse.all_reduce()
+            mae.all_reduce()
+            rmse.all_reduce()
+            bce.all_reduce()
 
-            average_acc = total_acc_tensor.item() / total_samples_tensor.item()
-            average_loss = total_loss_tensor.item() / total_samples_tensor.item()
-            self.writer.add_scalar("Loss/val", average_loss, epoch)
-            self.writer.add_scalar("Accuracy/val", average_acc, epoch)
+            loss.write(epoch)
+            acc.write(epoch)
+            precision.write(epoch)
+            recall.write(epoch)
+            f1.write(epoch)
+            mse.write(epoch)
+            mae.write(epoch)
+            rmse.write(epoch)
+            bce.write(epoch)
 
     def train(self, max_epochs: int):
         self.model.train()
@@ -181,7 +229,8 @@ class Trainer:
                 self._save_snapshot(epoch)
 
 
-def train(batch_size: int = 2, epochs: int = 15, learning_rate: float = 0.0025):
+def train(batch_size: int = 8, epochs: int = 15, learning_rate: float = 0.0025):
+
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
     )
@@ -209,7 +258,8 @@ def train(batch_size: int = 2, epochs: int = 15, learning_rate: float = 0.0025):
         model, train_loader, val_loader, optimizer, 1, log_dir, checkpoint_dir
     )
     trainer.train(epochs)
-    destroy_process_group()
+    distributed.destroy_process_group()
+
 
 if __name__ == "__main__":
     train()
