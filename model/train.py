@@ -1,5 +1,6 @@
 """
 Training Script(s) for the EFAuR model
+These scripts support ddp (Dynamic Distributed Parallel) training
 
 Author: Lucas Patten
 """
@@ -16,9 +17,9 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard.writer import SummaryWriter
 from torch.utils.data.distributed import DistributedSampler
 from torch.nn.parallel import DistributedDataParallel as DDP
-from authorship_model import SiameseAuthorshipModel
 from dataset import AuthorshipPairDataset
-from metrics import Metrics  # pylint: disable=no-name-in-module
+from metrics import Metrics
+from models import SiameseAuthorshipModel
 
 
 def ddp_setup():
@@ -28,35 +29,73 @@ def ddp_setup():
 
 
 class AverageMeter:
-    def __init__(self, name: str, metric: Callable, writer: SummaryWriter) -> None:
+    """Metric Tracker for Tensorboard
+
+    Args:
+        name (str): Metric name
+        metric (Callable): Metric function
+        writer (SummaryWriter): Tensorboard writer
+    """
+
+    def __init__(self, name: str, metric: Callable, writer: SummaryWriter):
         self.name = name
         self.metric = metric
         self.writer = writer
         self.val = self.avg = self.sum = self.count = 0
 
     def reset(self):
+        """Reset the metric"""
         self.val = 0
         self.avg = 0
         self.sum = 0
         self.count = 0
 
-    def update(self, predictions, labels, n=1):
+    def update(self, predictions: torch.Tensor, labels: torch.Tensor, n=1):
+        """Update the metric
+
+        Args:
+            predictions (torch.Tensor): Predictions from model
+            labels (torch.Tensor): True labels
+            n (int, optional): Number of samples. Defaults to 1.
+        """
         self.val = self.metric(predictions, labels)
         self.sum += self.val * n
         self.count += n
         self.avg = self.sum / self.count
 
     def all_reduce(self):
+        """Reduce the metric across all processes"""
         total = torch.tensor([self.sum, self.count]).cuda()
         distributed.all_reduce(total, op=distributed.ReduceOp.SUM, async_op=False)
         self.sum, self.count = total.tolist()
         self.avg = self.sum / self.count
 
     def write(self, epoch: int):
+        """Write the metric to tensorboard
+
+        Args:
+            epoch (int): Epoch number
+        """
         self.writer.add_scalar(self.name, self.avg, epoch)
 
 
 class Trainer:
+    """
+    Trainer for the EFAuR model.
+    Contains training loop.
+    Supports checkpointing and Tensorboard logging.
+
+    Args:
+        model (torch.nn.Module): Initialized Model to train (Usually a SiameseAuthorshipModel)
+        train_data (DataLoader): Training data
+        val_data (DataLoader): Validation data
+        optimizer (torch.optim.Optimizer): Initialized Optimizer
+        save_interval (int): Number of epochs between saving checkpoints
+        log_dir (str): Directory to save Tensorboard logs
+        checkpoint_dir (str): Directory to save checkpoints
+        checkpoint_number (str | int | None, optional): What checkpoint number to load. Defaults to None.
+    """
+
     def __init__(
         self,
         model: torch.nn.Module,
@@ -132,7 +171,7 @@ class Trainer:
         self.batch_count += 1
 
     def _run_epoch(self, epoch):
-        batch_size = len(next(iter(self.train_data))[1])
+        batch_size = len(next(iter(self.train_data))[2])
         logging.info(
             "[GPU:%s] Epoch %s | Batchsize %s | Steps %s",
             self.gpu_id,
@@ -169,6 +208,13 @@ class Trainer:
 
     def _run_val(self, epoch):
         batch_size = len(next(iter(self.val_data))[0])
+        logging.info(
+            "[GPU:%s] Epoch %s | Batchsize %s | Steps %s",
+            self.gpu_id,
+            epoch,
+            batch_size,
+            len(self.val_data),
+        )
         with torch.no_grad():
             loss = AverageMeter("Loss/val", Metrics.cross_entropy, self.writer)
             acc = AverageMeter("Accuracy/val", Metrics.accuracy, self.writer)
@@ -221,6 +267,11 @@ class Trainer:
             bce.write(epoch)
 
     def train(self, max_epochs: int):
+        """Run the model train loop
+
+        Args:
+            max_epochs (int): Maximum number of epochs to train for
+        """
         self.model.train()
         for epoch in range(self.epochs_run, max_epochs):
             self._run_epoch(epoch)
@@ -229,7 +280,14 @@ class Trainer:
                 self._save_snapshot(epoch)
 
 
-def train(batch_size: int = 8, epochs: int = 15, learning_rate: float = 0.0025):
+def train(batch_size: int = 16, epochs: int = 150, learning_rate: float = 0.0005):
+    """Train the model
+
+    Args:
+        batch_size (int, optional): Batch size. Defaults to 16.
+        epochs (int, optional): Number of epochs. Defaults to 150.
+        learning_rate (float, optional): Learning rate. Defaults to 0.0005.
+    """
 
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -240,8 +298,8 @@ def train(batch_size: int = 8, epochs: int = 15, learning_rate: float = 0.0025):
     val_ds = AuthorshipPairDataset("/home/lucasrp/compute/gutenberg/dataset/val/")
     model = SiameseAuthorshipModel()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-    log_dir = "/home/lucasrp/compute/efaur/logs/original/"
-    checkpoint_dir = "/home/lucasrp/compute/efaur/checkpoints/original/"
+    log_dir = "/home/lucasrp/compute/efaur/logs/try2/"
+    checkpoint_dir = "/home/lucasrp/compute/efaur/checkpoints/try2/"
     train_loader = DataLoader(
         train_ds,
         batch_size=batch_size,

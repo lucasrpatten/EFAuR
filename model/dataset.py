@@ -22,7 +22,7 @@ class AuthorshipPairDataset(Dataset):
     def __init__(self, dataset_dir: str) -> None:
         self.dataset_dir = dataset_dir
         self.length = len(os.listdir(dataset_dir))
-        self.tokenizer = RobertaTokenizer.from_pretrained("roberta-base")
+        self.tokenizer = RobertaTokenizer.from_pretrained("roberta-large")
 
     def __len__(self) -> int:
         return self.length

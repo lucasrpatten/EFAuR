@@ -1,3 +1,9 @@
+"""
+Contains Various Machine Learning Metric and Loss Functions
+
+Author: Lucas Patten
+"""
+
 import torch
 import torch.nn.functional as F
 
@@ -19,10 +25,10 @@ class Metrics:
             float: Accuracy Metric
         """
         device = labels.get_device()
-        predictions = (
-            torch.Tensor([1 if p >= threshold else 0 for p in pred])
-            .float()
-            .cuda(device)
+        predictions = torch.where(
+            pred >= threshold,
+            torch.tensor(1.0, device=device),
+            torch.tensor(0.0, device=device),
         )
         correct_predictions = (predictions == labels).sum().item()
 
@@ -42,10 +48,10 @@ class Metrics:
             float: Precision Metric
         """
         device = labels.get_device()
-        predictions = (
-            torch.Tensor([1 if p >= threshold else 0 for p in pred])
-            .float()
-            .cuda(device)
+        predictions = torch.where(
+            pred >= threshold,
+            torch.tensor(1.0, device=device),
+            torch.tensor(0.0, device=device),
         )
         true_positives = ((predictions == 1) & (labels == 1)).sum().item()
         false_positives = ((predictions == 1) & (labels == 0)).sum().item()
@@ -66,10 +72,10 @@ class Metrics:
             float: Recall Metric
         """
         device = labels.get_device()
-        predictions = (
-            torch.Tensor([1 if p >= threshold else 0 for p in pred])
-            .float()
-            .cuda(device)
+        predictions = torch.where(
+            pred >= threshold,
+            torch.tensor(1.0, device=device),
+            torch.tensor(0.0, device=device),
         )
         true_positives = ((predictions == 1) & (labels == 1)).sum().item()
         false_negatives = ((predictions == 0) & (labels == 1)).sum().item()
@@ -170,9 +176,9 @@ class Metrics:
             float: Binary Cross Entropy Loss
         """
         device = labels.get_device()
-        predictions = (
-            torch.Tensor([1 if p >= threshold else 0 for p in pred])
-            .float()
-            .cuda(device)
+        predictions = torch.where(
+            pred >= threshold,
+            torch.tensor(1.0, device=device),
+            torch.tensor(0.0, device=device),
         )
         return F.binary_cross_entropy_with_logits(predictions, labels).item()
