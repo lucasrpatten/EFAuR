@@ -50,7 +50,13 @@ class AverageMeter:
         self.sum = 0
         self.count = 0
 
-    def update(self, predictions: torch.Tensor, labels: torch.Tensor, n=1):
+    def update(
+        self,
+        predictions: torch.Tensor,
+        labels: torch.Tensor,
+        n=1,
+        threshold: float | None = None,
+    ):
         """Update the metric
 
         Args:
@@ -58,7 +64,10 @@ class AverageMeter:
             labels (torch.Tensor): True labels
             n (int, optional): Number of samples. Defaults to 1.
         """
-        self.val = self.metric(predictions, labels)
+        if threshold is not None:
+            self.val = self.metric(predictions, labels, threshold)
+        else:
+            self.val = self.metric(predictions, labels)
         self.sum += self.val * n
         self.count += n
         self.avg = self.sum / self.count
@@ -93,7 +102,8 @@ class Trainer:
         save_interval (int): Number of epochs between saving checkpoints
         log_dir (str): Directory to save Tensorboard logs
         checkpoint_dir (str): Directory to save checkpoints
-        checkpoint_number (str | int | None, optional): What checkpoint number to load. Defaults to None.
+        checkpoint_number (str | int | None, optional): What checkpoint number to load.
+        Defaults to None.
     """
 
     def __init__(
@@ -113,7 +123,7 @@ class Trainer:
         self.val_data = val_data
         self.optimizer = optimizer
         self.save_interval = save_interval
-        self.epochs_run = 0
+        self.epochs_run = 1
         self.checkpoint_dir = checkpoint_dir
         self.log_dir = log_dir
 
@@ -143,8 +153,13 @@ class Trainer:
         self.train_acc = AverageMeter("Accuracy/train", Metrics.accuracy, self.writer)
 
     def _save_snapshot(self, epoch: int):
+        model_state_dict = (
+            self.model.module.state_dict()
+            if isinstance(self.model, torch.nn.parallel.DistributedDataParallel)
+            else self.model.state_dict()
+        )
         snapshot = {
-            "MODEL_STATE": self.model.state_dict(),
+            "MODEL_STATE": model_state_dict,
             "OPTIMIZER_STATE": self.optimizer.state_dict(),
             "EPOCHS_RUN": epoch,
         }
@@ -156,9 +171,9 @@ class Trainer:
         loc = f"cuda:{self.gpu_id}"
         snapshot = torch.load(snapshot_path, map_location=loc)
         self.model.load_state_dict(snapshot["MODEL_STATE"])
-        self.epochs_run = snapshot["EPOCHS_RUN"]
+        self.epochs_run = snapshot["EPOCHS_RUN"]+1
         self.optimizer.load_state_dict(snapshot["OPTIMIZER_STATE"])
-        logging.info("Resuming training from snapshot at Epoch %s", self.epochs_run)
+        logging.info("Resuming training from snapshot at Epoch %s", self.epochs_run-1)
 
     def _run_batch(self, source1, source2, targets):
         self.optimizer.zero_grad()
@@ -173,7 +188,7 @@ class Trainer:
     def _run_epoch(self, epoch):
         batch_size = len(next(iter(self.train_data))[2])
         logging.info(
-            "[GPU:%s] Epoch %s | Batchsize %s | Steps %s",
+            "Train: [GPU:%s] Epoch %s | Batchsize %s | Steps %s",
             self.gpu_id,
             epoch,
             batch_size,
@@ -195,9 +210,7 @@ class Trainer:
         total_batches_tensor = torch.tensor(self.batch_count).cuda()
         distributed.all_reduce(total_loss_tensor, op=distributed.ReduceOp.SUM)
         distributed.all_reduce(total_batches_tensor, op=distributed.ReduceOp.SUM)
-        average_loss = total_loss_tensor.item() / (
-            total_batches_tensor.item() * batch_size
-        )
+        average_loss = total_loss_tensor.item() / total_batches_tensor.item()
         self.writer.add_scalar("Loss/train", average_loss, epoch)
         self.batch_count = 0
         self.train_loss = 0.0
@@ -206,10 +219,10 @@ class Trainer:
         self.train_acc.write(epoch)
         self.train_acc.reset()
 
-    def _run_val(self, epoch):
-        batch_size = len(next(iter(self.val_data))[0])
+    def _run_val(self, epoch):  # pylint: disable=too-many-locals
+        batch_size = len(next(iter(self.val_data))[2])
         logging.info(
-            "[GPU:%s] Epoch %s | Batchsize %s | Steps %s",
+            "Eval: [GPU:%s] Epoch %s | Batchsize %s | Steps %s",
             self.gpu_id,
             epoch,
             batch_size,
@@ -227,13 +240,21 @@ class Trainer:
             bce = AverageMeter(
                 "BinaryCrossEntropy/val", Metrics.binary_cross_entropy, self.writer
             )
+            acc65 = AverageMeter("Accuracy65/val", Metrics.accuracy, self.writer)
+            precision65 = AverageMeter(
+                "Precision65/val", Metrics.precision, self.writer
+            )
+            recall65 = AverageMeter("Recall65/val", Metrics.recall, self.writer)
+            f1_65 = AverageMeter("F1Score65/val", Metrics.f1_score, self.writer)
+            bce65 = AverageMeter(
+                "BinaryCrossEntropy65/val", Metrics.binary_cross_entropy, self.writer
+            )
 
             for source1, source2, targets in self.val_data:
                 source1 = source1.to(self.gpu_id)
                 source2 = source2.to(self.gpu_id)
                 targets = targets.to(self.gpu_id)
                 predictions = self.model(source1, source2)
-                batch_size = len(source1)
                 loss.update(predictions, targets, batch_size)
                 acc.update(predictions, targets, batch_size)
                 precision.update(predictions, targets, batch_size)
@@ -243,6 +264,11 @@ class Trainer:
                 mae.update(predictions, targets, batch_size)
                 rmse.update(predictions, targets, batch_size)
                 bce.update(predictions, targets, batch_size)
+                acc65.update(predictions, targets, batch_size, threshold=0.65)
+                precision65.update(predictions, targets, batch_size, threshold=0.65)
+                recall65.update(predictions, targets, batch_size, threshold=0.65)
+                f1_65.update(predictions, targets, batch_size, threshold=0.65)
+                bce65.update(predictions, targets, batch_size, threshold=0.65)
 
             distributed.barrier()
 
@@ -255,6 +281,11 @@ class Trainer:
             mae.all_reduce()
             rmse.all_reduce()
             bce.all_reduce()
+            acc65.all_reduce()
+            precision65.all_reduce()
+            recall65.all_reduce()
+            f1_65.all_reduce()
+            bce65.all_reduce()
 
             loss.write(epoch)
             acc.write(epoch)
@@ -265,6 +296,11 @@ class Trainer:
             mae.write(epoch)
             rmse.write(epoch)
             bce.write(epoch)
+            acc65.write(epoch)
+            precision65.write(epoch)
+            recall65.write(epoch)
+            f1_65.write(epoch)
+            bce65.write(epoch)
 
     def train(self, max_epochs: int):
         """Run the model train loop
@@ -273,14 +309,16 @@ class Trainer:
             max_epochs (int): Maximum number of epochs to train for
         """
         self.model.train()
-        for epoch in range(self.epochs_run, max_epochs):
+        for epoch in range(self.epochs_run, max_epochs + 1):
+            if epoch == 1:
+                self._run_val(0)
             self._run_epoch(epoch)
             self._run_val(epoch)
             if self.gpu_id == 0 and epoch % self.save_interval == 0:
                 self._save_snapshot(epoch)
 
 
-def train(batch_size: int = 16, epochs: int = 150, learning_rate: float = 0.0005):
+def train(batch_size: int = 16, epochs: int = 320, learning_rate: float = 0.0001):
     """Train the model
 
     Args:
@@ -298,8 +336,8 @@ def train(batch_size: int = 16, epochs: int = 150, learning_rate: float = 0.0005
     val_ds = AuthorshipPairDataset("/home/lucasrp/compute/gutenberg/dataset/val/")
     model = SiameseAuthorshipModel()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-    log_dir = "/home/lucasrp/compute/efaur/logs/try2/"
-    checkpoint_dir = "/home/lucasrp/compute/efaur/checkpoints/try2/"
+    log_dir = "/home/lucasrp/compute/efaur/logs/try3/"
+    checkpoint_dir = "/home/lucasrp/compute/efaur/checkpoints/try3/"
     train_loader = DataLoader(
         train_ds,
         batch_size=batch_size,

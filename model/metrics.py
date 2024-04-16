@@ -25,6 +25,7 @@ class Metrics:
             float: Accuracy Metric
         """
         device = labels.get_device()
+        # 0 = same, 1 = different
         predictions = torch.where(
             pred >= threshold,
             torch.tensor(1.0, device=device),
@@ -35,6 +36,7 @@ class Metrics:
         total_predictions = labels.size(0)
         return float(correct_predictions / total_predictions)
 
+    #!FIXME Why does this always return 0?
     @staticmethod
     def precision(pred: torch.Tensor, labels: torch.Tensor, threshold: float = 0.8):
         """Computes precision (true positives / (true positives + false positives))
@@ -48,17 +50,19 @@ class Metrics:
             float: Precision Metric
         """
         device = labels.get_device()
+        # 0 = same, 1 = different
         predictions = torch.where(
             pred >= threshold,
             torch.tensor(1.0, device=device),
             torch.tensor(0.0, device=device),
         )
-        true_positives = ((predictions == 1) & (labels == 1)).sum().item()
-        false_positives = ((predictions == 1) & (labels == 0)).sum().item()
+        true_positives = ((predictions == 0.0) & (labels == 0.0)).sum().item()
+        false_positives = ((predictions == 0.0) & (labels == 1.0)).sum().item()
 
         precision_score = true_positives / (true_positives + false_positives + 1e-9)
         return precision_score
 
+    #!FIXME Why does this always return 0?
     @staticmethod
     def recall(pred: torch.Tensor, labels: torch.Tensor, threshold: float = 0.8):
         """Computes recall (true positives / (true positives + false negatives))
@@ -72,19 +76,21 @@ class Metrics:
             float: Recall Metric
         """
         device = labels.get_device()
+        # 0 = same, 1 = different
         predictions = torch.where(
             pred >= threshold,
             torch.tensor(1.0, device=device),
             torch.tensor(0.0, device=device),
         )
-        true_positives = ((predictions == 1) & (labels == 1)).sum().item()
-        false_negatives = ((predictions == 0) & (labels == 1)).sum().item()
+        true_positives = ((predictions == 0.0) & (labels == 0.0)).sum().item()
+        false_negatives = ((predictions == 1.0) & (labels == 0.0)).sum().item()
 
         recall_score = true_positives / (true_positives + false_negatives + 1e-9)
         return recall_score
 
+    #!FIXME Why does this always return 0? (Because recall and precision are always 0)
     @staticmethod
-    def f1_score(pred: torch.Tensor, labels: torch.Tensor):
+    def f1_score(pred: torch.Tensor, labels: torch.Tensor, threshold: float = 0.8):
         """Computes f1_score (2 * (precision * recall) / (precision + recall + 1e-9))
 
         Args:
@@ -94,8 +100,8 @@ class Metrics:
         Returns:
             float: F1 Score
         """
-        precision_score = Metrics.precision(pred, labels)
-        recall_score = Metrics.recall(pred, labels)
+        precision_score = Metrics.precision(pred, labels, threshold)
+        recall_score = Metrics.recall(pred, labels, threshold)
 
         f1_score = (
             2
@@ -176,6 +182,7 @@ class Metrics:
             float: Binary Cross Entropy Loss
         """
         device = labels.get_device()
+        # 0 = same, 1 = different
         predictions = torch.where(
             pred >= threshold,
             torch.tensor(1.0, device=device),
