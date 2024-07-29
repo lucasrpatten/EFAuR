@@ -4,12 +4,118 @@ Contains Various Machine Learning Metric and Loss Functions
 Author: Lucas Patten
 """
 
+import logging
+import sys
 import torch
 import torch.nn.functional as F
 
 
+class ContrastiveLoss(torch.nn.Module):
+    """Contrastive Loss Class
+
+    Args:
+        *args: Arguments to the base class
+        margin (float, optional): Margin for the contrastive loss. Defaults to 1.0.
+        **kwargs: Keyword arguments to the base class
+    """
+
+    def __init__(self, *args, margin: float = 1.0, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.margin = margin
+
+    def forward(self, output1: torch.Tensor, output2: torch.Tensor, targets: torch.Tensor):
+        """Computes Contrastive Loss
+
+        Args:
+            output1 (torch.Tensor): The output of the first model
+            output2 (torch.Tensor): The output of the second model
+            targets (torch.Tensor): The target labels
+
+        Returns:
+            torch.Tensor: Contrastive Loss
+        """
+        return self.contrastive_average(output1, output2, targets, self.margin)
+
 class Metrics:
     """Class containing various metric computations"""
+
+    @staticmethod
+    def binary_contrastive_accuracy(
+        output1: torch.Tensor,
+        output2: torch.Tensor,
+        target: torch.Tensor,
+        margin: float = 1.0,
+        threshold: float = 0.8,
+    ):
+        """Computes Contrastive Loss with threshold
+
+        Args:
+            output1 (torch.Tensor): The output of the first model
+            output2 (torch.Tensor): The output of the second model
+            target (torch.Tensor): The target labels
+            margin (float, optional): Margin for the contrastive loss. Defaults to 1.0.
+            threshold (float, optional): Threshold for binary classification. Defaults to 0.8.
+
+        Returns:
+            Tensor: Contrastive Loss
+        """
+        if target.size(0) != output1.size(0) or target.size(0) != output2.size(0):
+            logging.critical(
+                "Target and output sizes do not match. Output1: %s, Output2: %s, Target: %s",
+                output1.size(0),
+                output2.size(0),
+                target.size(0),
+            )
+            sys.exit(1)
+        euclidean_distance = F.pairwise_distance(  # pylint: disable=not-callable
+            output1, output2
+        )
+        same_author_loss = (1 - target) * torch.pow(euclidean_distance, 2)
+        diff_author_loss = target * torch.pow(
+            torch.clamp(margin - euclidean_distance, min=0.0), 2
+        )
+        loss_contrastive = same_author_loss + diff_author_loss
+
+        # 0 = same, 1 = different
+        binary_vals = (loss_contrastive > threshold).float()
+
+        return binary_vals
+
+    @staticmethod
+    def contrastive_average(
+        output1: torch.Tensor,
+        output2: torch.Tensor,
+        target: torch.Tensor,
+        margin: float = 1.0,
+    ) -> torch.Tensor:
+        """Computes Contrastive Loss
+
+        Args:
+            output1 (torch.Tensor): The output of the first model
+            output2 (torch.Tensor): The output of the second model
+            target (torch.Tensor): The target labels
+            margin (float, optional): Margin for the contrastive loss. Defaults to 1.0.
+
+        Returns:
+            Tensor: Contrastive Loss
+        """
+        if target.size(0) != output1.size(0) or target.size(0) != output2.size(0):
+            logging.critical(
+                "Target and output sizes do not match. Output1: %s, Output2: %s, Target: %s",
+                output1.size(0),
+                output2.size(0),
+                target.size(0),
+            )
+            sys.exit(1)
+        euclidean_distance = F.pairwise_distance(  # pylint: disable=not-callable
+            output1, output2
+        )
+        same_author_loss = (1 - target) * torch.pow(euclidean_distance, 2)
+        diff_author_loss = target * torch.pow(
+            torch.clamp(margin - euclidean_distance, min=0.0), 2
+        )
+        loss_contrastive = same_author_loss + diff_author_loss
+        return (loss_contrastive).mean()
 
     @staticmethod
     def accuracy(pred: torch.Tensor, labels: torch.Tensor, threshold: float = 0.8):
