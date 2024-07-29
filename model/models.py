@@ -4,6 +4,7 @@ Contains Models for EFAuR (Authorship Embedding, Siamese Authorship Model)
 Author: Lucas Patten
 """
 
+from typing import Tuple
 import torch
 
 from torch import nn
@@ -77,7 +78,7 @@ class SiameseAuthorshipModel(nn.Module):
         super().__init__()
         self.embedding_model = AuthorshipEmbeddingModel()
 
-    def forward(self, input1, input2) -> torch.Tensor:
+    def forward(self, input1, input2) -> Tuple[torch.Tensor, torch.Tensor]:
         """Forward pass
 
         Args:
@@ -90,4 +91,4 @@ class SiameseAuthorshipModel(nn.Module):
         embedding1 = self.embedding_model(input1)
         embedding2 = self.embedding_model(input2)
 
-        return torch.cosine_similarity(embedding1, embedding2, dim=1)
+        return embedding1, embedding2

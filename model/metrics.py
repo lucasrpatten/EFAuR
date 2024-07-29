@@ -4,8 +4,6 @@ Contains Various Machine Learning Metric and Loss Functions
 Author: Lucas Patten
 """
 
-import logging
-import sys
 import torch
 import torch.nn.functional as F
 
@@ -34,13 +32,53 @@ class ContrastiveLoss(torch.nn.Module):
         Returns:
             torch.Tensor: Contrastive Loss
         """
-        return self.contrastive_average(output1, output2, targets, self.margin)
+        return Metrics.contrastive_average(
+            output1, output2, targets, self.margin
+        )
 
 class Metrics:
     """Class containing various metric computations"""
 
-    @staticmethod
-    def binary_contrastive_accuracy(
+    @classmethod
+    def contrastive_loss(
+        cls,
+        output1: torch.Tensor,
+        output2: torch.Tensor,
+        target: torch.Tensor,
+        margin: float = 1.0,
+    ) -> torch.Tensor:
+        """Computes Contrastive Losses
+
+        Args:
+            output1 (torch.Tensor): The output of the first model
+            output2 (torch.Tensor): The output of the second model
+            target (torch.Tensor): The target labels
+            margin (float, optional): Margin for the contrastive loss. Defaults to 1.0.
+
+        Returns:
+            torch.Tensor: A Tensor of Contrastive Losses
+        """
+        # if target.size(0) != output1.size(0) or target.size(0) != output2.size(0):
+        #     logging.critical(
+        #         "Target and output sizes do not match. Output1: %s, Output2: %s, Target: %s",
+        #         output1.size(0),
+        #         output2.size(0),
+        #         target.size(0),
+        #     )
+        #     sys.exit(1)
+
+        euclidean_distance = F.pairwise_distance(  # pylint: disable=not-callable
+            output1, output2
+        )
+        same_author_loss = (1 - target) * torch.pow(euclidean_distance, 2)
+        different_author_loss = target * torch.pow(
+            torch.clamp(margin - euclidean_distance, min=0.0), 2
+        )
+        return same_author_loss + different_author_loss
+
+    @classmethod
+    def binary_contrastive_tensor(
+        cls,
         output1: torch.Tensor,
         output2: torch.Tensor,
         target: torch.Tensor,
@@ -59,30 +97,19 @@ class Metrics:
         Returns:
             Tensor: Contrastive Loss
         """
-        if target.size(0) != output1.size(0) or target.size(0) != output2.size(0):
-            logging.critical(
-                "Target and output sizes do not match. Output1: %s, Output2: %s, Target: %s",
-                output1.size(0),
-                output2.size(0),
-                target.size(0),
-            )
-            sys.exit(1)
-        euclidean_distance = F.pairwise_distance(  # pylint: disable=not-callable
-            output1, output2
+
+        loss_contrastive = cls.contrastive_loss(
+            output1, output2, target, margin
         )
-        same_author_loss = (1 - target) * torch.pow(euclidean_distance, 2)
-        diff_author_loss = target * torch.pow(
-            torch.clamp(margin - euclidean_distance, min=0.0), 2
-        )
-        loss_contrastive = same_author_loss + diff_author_loss
 
         # 0 = same, 1 = different
         binary_vals = (loss_contrastive > threshold).float()
 
         return binary_vals
 
-    @staticmethod
+    @classmethod
     def contrastive_average(
+        cls,
         output1: torch.Tensor,
         output2: torch.Tensor,
         target: torch.Tensor,
@@ -99,22 +126,9 @@ class Metrics:
         Returns:
             Tensor: Contrastive Loss
         """
-        if target.size(0) != output1.size(0) or target.size(0) != output2.size(0):
-            logging.critical(
-                "Target and output sizes do not match. Output1: %s, Output2: %s, Target: %s",
-                output1.size(0),
-                output2.size(0),
-                target.size(0),
-            )
-            sys.exit(1)
-        euclidean_distance = F.pairwise_distance(  # pylint: disable=not-callable
-            output1, output2
+        loss_contrastive = cls.contrastive_loss(
+            output1, output2, target, margin
         )
-        same_author_loss = (1 - target) * torch.pow(euclidean_distance, 2)
-        diff_author_loss = target * torch.pow(
-            torch.clamp(margin - euclidean_distance, min=0.0), 2
-        )
-        loss_contrastive = same_author_loss + diff_author_loss
         return (loss_contrastive).mean()
 
     @staticmethod
