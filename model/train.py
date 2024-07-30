@@ -7,6 +7,7 @@ Author: Lucas Patten
 
 import logging
 import os
+import re
 from typing import Callable
 import typing
 import torch
@@ -191,9 +192,9 @@ class Trainer:
         self.epochs_run = snapshot["EPOCHS_RUN"] + 1
         self.optimizer.load_state_dict(snapshot["OPTIMIZER_STATE"])
         logging.info(
-            "[GPU:%s] Resuming training from snapshot at Epoch %s",
+            "[GPU:%s] Snapshot loaded from %s",
             self.gpu_id,
-            self.epochs_run - 1,
+            snapshot_path
         )
 
     def _run_batch(self, source1, source2, targets):
@@ -216,7 +217,7 @@ class Trainer:
         self.train_acc50.update(train_acc50, targets, len(source1), 0.5)
         self.batch_count += 1
 
-    def _run_epoch(self, epoch):
+    def _run_epoch(self, epoch: int):
         batch_size = len(next(iter(self.train_data))[2])
         logging.info(
             "Train: [GPU:%s] Epoch %s | Batchsize %s | Steps %s",
@@ -326,7 +327,7 @@ class Trainer:
                 targets = targets.to(self.gpu_id)
                 pred1, pred2 = self.model(source1, source2)
 
-                preds = Metrics.binary_contrastive_tensor(pred1, pred2, target=targets)
+                preds = Metrics.contrastive_loss(pred1, pred2, target=targets)
                 if len(preds) == 0:
                     raise ValueError("No predictions in this batch")
                 for _, (metric, threshold) in metrics.items():
@@ -356,8 +357,37 @@ class Trainer:
             if self.gpu_id == 0 and epoch % self.save_interval == 0:
                 self._save_snapshot(epoch)
 
+def latest_snapshot_number(checkpoint_dir: str) -> int | None:
+    """Get the latest snapshot number in the checkpoint directory
 
-def train(batch_size: int = 16, epochs: int = 320, learning_rate: float = 0.0001):
+    Args:
+        checkpoint_dir (str): Checkpoint directory
+
+    Returns:
+        int | None: Latest snapshot number
+    """
+    if not os.path.exists(checkpoint_dir):
+        logging.warning("Checkpoint directory does not exist: %s", checkpoint_dir)
+        return
+
+    snapshot_pattern = re.compile(r"snapshot_(\d+)\.pt")
+    files = os.listdir(checkpoint_dir)
+    if not files:
+        logging.warning("No files exist in checkpoint directory: %s", checkpoint_dir)
+        return
+    snapshot = -1
+    for filename in files:
+        match = snapshot_pattern.match(filename)
+        if match:
+            epoch = int(match.group(1))
+            if epoch > snapshot:
+                snapshot = epoch
+    if snapshot == -1:
+        logging.warning("No snapshots found in directory: %s", checkpoint_dir)
+        return
+    return snapshot
+
+def train(batch_size: int = 16, epochs: int = 320, learning_rate: float = 0.001):
     """Train the model
 
     Args:
@@ -393,8 +423,9 @@ def train(batch_size: int = 16, epochs: int = 320, learning_rate: float = 0.0001
         pin_memory=True,
         sampler=DistributedSampler(val_ds),
     )
+    latest_epoch = latest_snapshot_number(checkpoint_dir)
     trainer = Trainer(
-        model, train_loader, val_loader, optimizer, 1, log_dir, checkpoint_dir
+        model, train_loader, val_loader, optimizer, 1, log_dir, checkpoint_dir, latest_epoch
     )
     trainer.train(epochs)
     distributed.destroy_process_group()
