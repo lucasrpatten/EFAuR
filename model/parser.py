@@ -4,7 +4,7 @@ Parses command line arguments and invokes the train function
 
 import argparse
 
-from model.train import train
+from train import train
 
 
 def parse_arguments():
@@ -17,24 +17,24 @@ def parse_arguments():
 
     # Add arguments
     parser.add_argument(
-        "--batch_size", type=int, required=True, help="Batch size for training"
+        "--batch_size", type=int, default=24, help="Batch size for training"
     )
     parser.add_argument(
-        "--learning_rate", type=float, required=True, help="Learning rate for training"
+        "--learning_rate", type=float, default=0.0001, help="Learning rate for training"
     )
     parser.add_argument(
-        "--epochs", type=int, required=True, help="Number of epochs for training"
+        "--epochs", type=int, default=150, help="Number of epochs for training"
     )
     parser.add_argument(
         "--activation",
         choices=["relu", "leakyrelu", "swish"],
-        required=True,
+        default="relu",
         help="Activation function to use",
     )
     parser.add_argument(
         "--pooling",
         choices=["cls", "mean", "max", "attention"],
-        required=True,
+        default="max",
         help="Pooling method to use",
     )
 

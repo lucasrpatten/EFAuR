@@ -423,7 +423,7 @@ def train(
     )
     model = SiameseAuthorshipModel(pooling_method, activation_function)
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-    train_id = f"bs{batch_size}_lr{learning_rate}"
+    train_id = f"{batch_size}_{learning_rate}_{pooling_method}_{activation_function}"
     log_dir = f"/home/lucasrp/nobackup/archive/efaur/logs/{train_id}/"
     checkpoint_dir = f"/home/lucasrp/nobackup/archive/efaur/checkpoints/{train_id}/"
     train_loader = DataLoader(
@@ -451,7 +451,3 @@ def train(
     )
     trainer.train(epochs)
     distributed.destroy_process_group()
-
-
-if __name__ == "__main__":
-    train(batch_size=20, learning_rate=0.0001)
