@@ -36,20 +36,45 @@ class AuthorshipEmbeddingModel(nn.Module):
     Generates an embedding for the authorship of the book
     """
 
-    def __init__(self):
+    def __init__(self, pooling_method: str = "mean", activation_function: str = "relu"):
         super().__init__()
+        if activation_function == "relu":
+            self.activation = nn.ReLU()
+        elif activation_function == "leakyrelu":
+            self.activation = nn.LeakyReLU()
+        elif activation_function == "swish":
+            self.activation = Swish()
+        else:
+            raise ValueError(
+                f"Activation function {activation_function} not recognized. "
+                + "Choose from 'relu', 'swish', 'leakyrelu'"
+            )
         self.roberta = RobertaModel.from_pretrained("roberta-large")
         self.ff_layers = nn.Sequential(
             nn.Linear(1024, 512),
-            nn.LeakyReLU(),
+            self.activation,
             nn.Linear(512, 256),
-            Swish(),
+            self.activation,
             nn.Linear(256, 128),
-            nn.ReLU(),
-            nn.Linear(128, 64),
         )
 
-    def forward(self, data) -> torch.Tensor:
+        self.pooling_method = pooling_method
+        if pooling_method == "mean":
+            self.pooling = self._mean_pooling
+        elif pooling_method == "max":
+            self.pooling = self._max_pooling
+        elif pooling_method == "attention":
+            self.attention_weights = nn.Linear(1024, 1)
+            self.pooling = self._attention_pooling
+        elif pooling_method == "cls":
+            self.pooling = self._cls_embedding
+        else:
+            raise ValueError(
+                f"Pooling method {pooling_method} not recognised. "
+                + "Choose from 'attention', 'cls', 'mean', 'max'"
+            )
+
+    def forward(self, data: dict[str, torch.Tensor]) -> torch.Tensor:
         """Forward pass
 
         Args:
@@ -61,14 +86,42 @@ class AuthorshipEmbeddingModel(nn.Module):
         input_ids = data["input_ids"].squeeze(1)
         input_mask = data["attention_mask"].squeeze(1)
 
-        cls_embed = self.roberta(input_ids=input_ids, attention_mask=input_mask)[  # type: ignore
-            "last_hidden_state"
-        ][
-            :, 0, :
-        ]
+        token_embeddings = self.roberta(
+            input_ids=input_ids, attention_mask=input_mask  # type: ignore
+        )["last_hidden_state"]
 
-        authorship_embedding = self.ff_layers(cls_embed)
+        pooled_embeddings = self.pooling(token_embeddings, input_mask)
+
+        authorship_embedding = self.ff_layers(pooled_embeddings)
         return authorship_embedding
+
+    def _cls_embedding(self, token_embeddings, _) -> torch.Tensor:
+        return token_embeddings[:, 0, :]
+
+    def _mean_pooling(
+        self, token_embeddings: torch.Tensor, attention_mask: torch.Tensor
+    ) -> torch.Tensor:
+        attention_mask = attention_mask.float()
+        input_mask_expand = attention_mask.unsqueeze(-1).expand(token_embeddings.size())
+        sum_embeddings = torch.sum(token_embeddings * input_mask_expand, 1)
+        sum_mask = torch.clamp(input_mask_expand.sum(1), min=1e-9)
+        return sum_embeddings / sum_mask
+
+    def _max_pooling(
+        self, token_embeddings: torch.Tensor, attention_mask: torch.Tensor
+    ) -> torch.Tensor:
+        attention_mask = attention_mask.float()
+        input_mask_expanded = (
+            attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
+        )
+        token_embeddings[input_mask_expanded == 0] = -1e9
+        return torch.max(token_embeddings, 1)[0]
+
+    def _attention_pooling(self, token_embeddings: torch.Tensor, _) -> torch.Tensor:
+        attention_scores = torch.nn.functional.softmax(
+            self.attention_weights(token_embeddings), dim=1
+        )
+        return torch.sum(token_embeddings * attention_scores, dim=1)
 
 
 class SiameseAuthorshipModel(nn.Module):
