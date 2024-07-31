@@ -34,9 +34,16 @@ class AuthorshipEmbeddingModel(nn.Module):
     """
     Authorship Embedding Model
     Generates an embedding for the authorship of the book
+
+    Args:
+        pooling_method (str, optional): Pooling method. Defaults to "max".
+        activation_function (str, optional): Activation function. Defaults to "relu".
+
+    Raises:
+        ValueError: If activation function or pooling method is not recognized
     """
 
-    def __init__(self, pooling_method: str = "mean", activation_function: str = "relu"):
+    def __init__(self, pooling_method: str = "max", activation_function: str = "relu"):
         super().__init__()
         if activation_function == "relu":
             self.activation = nn.ReLU()
@@ -125,11 +132,18 @@ class AuthorshipEmbeddingModel(nn.Module):
 
 
 class SiameseAuthorshipModel(nn.Module):
-    """Siamese Authorship Model For Training"""
+    """Siamese Authorship Model For Training
 
-    def __init__(self):
+    Args:
+        pooling_method (str, optional): Pooling method. Defaults to "max".
+        activation_function (str, optional): Activation function. Defaults to "relu".
+    """
+
+    def __init__(self, pooling_method: str = "max", activation_function: str = "relu"):
         super().__init__()
-        self.embedding_model = AuthorshipEmbeddingModel()
+        self.embedding_model = AuthorshipEmbeddingModel(
+            pooling_method, activation_function
+        )
 
     def forward(self, input1, input2) -> Tuple[torch.Tensor, torch.Tensor]:
         """Forward pass

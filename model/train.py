@@ -191,11 +191,7 @@ class Trainer:
         self.model.load_state_dict(snapshot["MODEL_STATE"])
         self.epochs_run = snapshot["EPOCHS_RUN"] + 1
         self.optimizer.load_state_dict(snapshot["OPTIMIZER_STATE"])
-        logging.info(
-            "[GPU:%s] Snapshot loaded from %s",
-            self.gpu_id,
-            snapshot_path
-        )
+        logging.info("[GPU:%s] Snapshot loaded from %s", self.gpu_id, snapshot_path)
 
     def _run_batch(self, source1, source2, targets):
         criterion = ContrastiveLoss()
@@ -357,6 +353,7 @@ class Trainer:
             if self.gpu_id == 0 and epoch % self.save_interval == 0:
                 self._save_snapshot(epoch)
 
+
 def latest_snapshot_number(checkpoint_dir: str) -> int | None:
     """Get the latest snapshot number in the checkpoint directory
 
@@ -367,14 +364,20 @@ def latest_snapshot_number(checkpoint_dir: str) -> int | None:
         int | None: Latest snapshot number
     """
     if not os.path.exists(checkpoint_dir):
-        logging.warning("Checkpoint directory does not exist: %s", checkpoint_dir)
-        return
+        logging.warning(
+            "Checkpoint directory does not exist: %s. Starting from scratch",
+            checkpoint_dir,
+        )
+        return None
 
     snapshot_pattern = re.compile(r"snapshot_(\d+)\.pt")
     files = os.listdir(checkpoint_dir)
     if not files:
-        logging.warning("No files exist in checkpoint directory: %s", checkpoint_dir)
-        return
+        logging.warning(
+            "No files exist in checkpoint directory: %s. Starting from scratch",
+            checkpoint_dir,
+        )
+        return None
     snapshot = -1
     for filename in files:
         match = snapshot_pattern.match(filename)
@@ -383,17 +386,28 @@ def latest_snapshot_number(checkpoint_dir: str) -> int | None:
             if epoch > snapshot:
                 snapshot = epoch
     if snapshot == -1:
-        logging.warning("No snapshots found in directory: %s", checkpoint_dir)
-        return
+        logging.warning(
+            "No snapshots found in directory: %s. Starting from scratch", checkpoint_dir
+        )
+        return None
     return snapshot
 
-def train(batch_size: int = 16, epochs: int = 320, learning_rate: float = 0.001):
+
+def train(
+    batch_size: int = 16,
+    epochs: int = 320,
+    learning_rate: float = 0.0001,
+    pooling_method: str = "max",
+    activation_function: str = "relu",
+):
     """Train the model
 
     Args:
         batch_size (int, optional): Batch size. Defaults to 16.
         epochs (int, optional): Number of epochs. Defaults to 150.
         learning_rate (float, optional): Learning rate. Defaults to 0.0005.
+        pooling_method (str, optional): Pooling method. Defaults to "max".
+        activation_function (str, optional): Activation function. Defaults to "relu".
     """
 
     logging.basicConfig(
@@ -407,10 +421,11 @@ def train(batch_size: int = 16, epochs: int = 320, learning_rate: float = 0.001)
     val_ds = AuthorshipPairDataset(
         "/home/lucasrp/nobackup/archive/gutenberg/dataset/val/"
     )
-    model = SiameseAuthorshipModel()
+    model = SiameseAuthorshipModel(pooling_method, activation_function)
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-    log_dir = "/home/lucasrp/nobackup/archive/efaur/logs/try3/"
-    checkpoint_dir = "/home/lucasrp/nobackup/archive/efaur/checkpoints/try3/"
+    train_id = f"bs{batch_size}_lr{learning_rate}"
+    log_dir = f"/home/lucasrp/nobackup/archive/efaur/logs/{train_id}/"
+    checkpoint_dir = f"/home/lucasrp/nobackup/archive/efaur/checkpoints/{train_id}/"
     train_loader = DataLoader(
         train_ds,
         batch_size=batch_size,
@@ -425,11 +440,18 @@ def train(batch_size: int = 16, epochs: int = 320, learning_rate: float = 0.001)
     )
     latest_epoch = latest_snapshot_number(checkpoint_dir)
     trainer = Trainer(
-        model, train_loader, val_loader, optimizer, 1, log_dir, checkpoint_dir, latest_epoch
+        model,
+        train_loader,
+        val_loader,
+        optimizer,
+        1,
+        log_dir,
+        checkpoint_dir,
+        latest_epoch,
     )
     trainer.train(epochs)
     distributed.destroy_process_group()
 
 
 if __name__ == "__main__":
-    train()
+    train(batch_size=20, learning_rate=0.0001)
