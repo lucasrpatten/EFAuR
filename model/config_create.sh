@@ -2,9 +2,12 @@
 
 # Define learning rates, activation functions, and pooling methods
 # Change these values to vary the configuration
-learning_rates=("0.0001" "0.0002" "0.0005")
+#!TODO Find the best learning rate using binary search
+learning_rates=("0.00025") #"0.0002" "0.0005")
+#!TODO Find the best activation function
 activations=("relu" "leakyrelu" "swish")
-pooling_methods=("mean" "max" "attention")
+#!TODO Find the best pooling method (probably attention)
+pooling_methods=("attention") # "mean" "max"
 
 # Define the output configuration file
 config_file="job_array_config.txt"

@@ -5,8 +5,10 @@ venv/
 # Cache
 __pycache__/
 
-# Job Runner Files
-slurm*
+# Job Output/Input Files
+slurm-*
+job_array_config.txt
+
 run_job.sh
 
 # Memory/Core Dumps

@@ -8,9 +8,9 @@ Author: Lucas Patten
 import logging
 import os
 import re
-from typing import Callable
 import typing
 import torch
+from sys import exit
 
 from torch import distributed
 from torch import optim
@@ -38,7 +38,7 @@ class AverageMeter:
         writer (SummaryWriter): Tensorboard writer
     """
 
-    def __init__(self, name: str, metric: Callable, writer: SummaryWriter):
+    def __init__(self, name: str, metric: typing.Callable, writer: SummaryWriter):
         self.name = name
         self.metric = metric
         self.writer = writer
@@ -157,12 +157,11 @@ class Trainer:
 
         self.batch_count = 0
         self.train_loss = 0.0
-        self.train_acc = AverageMeter("Accuracy/train", Metrics.accuracy, self.writer)
-        self.train_acc65 = AverageMeter(
-            "Accuracy65/train", Metrics.accuracy, self.writer
-        )
-        self.train_acc50 = AverageMeter(
-            "Accuracy50/train", Metrics.accuracy, self.writer
+        self.train_accs = (
+            (AverageMeter("Accuracy100/train", Metrics.accuracy, self.writer), 1.0),
+            (AverageMeter("Accuracy80/train", Metrics.accuracy, self.writer), 0.8),
+            (AverageMeter("Accuracy65/train", Metrics.accuracy, self.writer), 0.65),
+            (AverageMeter("Accuracy50/train", Metrics.accuracy, self.writer), 0.5),
         )
 
     def _save_snapshot(self, epoch: int):
@@ -201,16 +200,14 @@ class Trainer:
         loss.backward()
         self.optimizer.step()
         self.train_loss += loss.item()
-        train_acc = Metrics.binary_contrastive_tensor(embeddings1, embeddings2, targets)
-        train_acc65 = Metrics.binary_contrastive_tensor(
-            embeddings1, embeddings2, targets, threshold=0.65
-        )
-        train_acc50 = Metrics.binary_contrastive_tensor(
-            embeddings1, embeddings2, targets, threshold=0.5
-        )
-        self.train_acc.update(train_acc, targets, len(source1))
-        self.train_acc65.update(train_acc65, targets, len(source1), 0.65)
-        self.train_acc50.update(train_acc50, targets, len(source1), 0.5)
+
+        for metric, threshold in self.train_accs:
+            metric.update(
+                Metrics.contrastive_loss(embeddings1, embeddings2, targets),
+                targets,
+                len(source1),
+                threshold,
+            )
         self.batch_count += 1
 
     def _run_epoch(self, epoch: int):
@@ -243,17 +240,10 @@ class Trainer:
         self.batch_count = 0
         self.train_loss = 0.0
 
-        self.train_acc.all_reduce()
-        self.train_acc65.all_reduce()
-        self.train_acc50.all_reduce()
-
-        self.train_acc.write(epoch)
-        self.train_acc65.write(epoch)
-        self.train_acc50.write(epoch)
-
-        self.train_acc.reset()
-        self.train_acc65.reset()
-        self.train_acc50.reset()
+        for metric, _ in self.train_accs:
+            metric.all_reduce()
+            metric.write(epoch)
+            metric.reset()
 
     def _run_eval(self, epoch):  # pylint: disable=too-many-locals
         batch_size = len(next(iter(self.val_data))[2])
@@ -269,19 +259,19 @@ class Trainer:
             # metric : tuple(AverageMeter, pred_type, threshold)
             metrics: dict[str, tuple[AverageMeter, float | None]] = {
                 "acc100": (
-                    AverageMeter("Accuracy/val", Metrics.accuracy, self.writer),
+                    AverageMeter("Accuracy100/val", Metrics.accuracy, self.writer),
                     1.0,
                 ),
                 "acc80": (
-                    AverageMeter("Accuracy65/val", Metrics.accuracy, self.writer),
+                    AverageMeter("Accuracy80/val", Metrics.accuracy, self.writer),
                     0.80,
                 ),
                 "acc65": (
-                    AverageMeter("Accuracy50/val", Metrics.accuracy, self.writer),
+                    AverageMeter("Accuracy65/val", Metrics.accuracy, self.writer),
                     0.65,
                 ),
                 "acc50": (
-                    AverageMeter("Accuracy/val", Metrics.accuracy, self.writer),
+                    AverageMeter("Accuracy50/val", Metrics.accuracy, self.writer),
                     0.5,
                 ),
                 "acc25": (
@@ -291,13 +281,13 @@ class Trainer:
                 "mse": (AverageMeter("MSE/val", Metrics.mse, self.writer), None),
                 "mae": (AverageMeter("MAE/val", Metrics.mae, self.writer), None),
                 "rmse": (AverageMeter("RMSE/val", Metrics.rmse, self.writer), None),
-                "bce": (
+                "bce80": (
                     AverageMeter(
                         "BinaryCrossEntropy/val",
                         Metrics.binary_cross_entropy,
                         self.writer,
                     ),
-                    None,
+                    0.80,
                 ),
                 "bce65": (
                     AverageMeter(
@@ -316,7 +306,6 @@ class Trainer:
                     0.5,
                 ),
             }
-
             for source1, source2, targets in self.val_data:
                 source1 = source1.to(self.gpu_id)
                 source2 = source2.to(self.gpu_id)
@@ -337,6 +326,7 @@ class Trainer:
             for _, (metric, _) in metrics.items():
                 metric.all_reduce()
                 metric.write(epoch)
+                metric.reset()
 
     def train(self, max_epochs: int):
         """Run the model train loop
@@ -426,6 +416,10 @@ def train(
     train_id = f"{batch_size}_{learning_rate}_{pooling_method}_{activation_function}"
     log_dir = f"/home/lucasrp/nobackup/archive/efaur/logs/{train_id}/"
     checkpoint_dir = f"/home/lucasrp/nobackup/archive/efaur/checkpoints/{train_id}/"
+    latest_epoch = latest_snapshot_number(checkpoint_dir)
+    if latest_epoch == epochs:
+        logging.info("Snapshot already trained to epoch %s - exiting", latest_epoch)
+        exit(0)
     train_loader = DataLoader(
         train_ds,
         batch_size=batch_size,
@@ -438,7 +432,6 @@ def train(
         pin_memory=True,
         sampler=DistributedSampler(val_ds),
     )
-    latest_epoch = latest_snapshot_number(checkpoint_dir)
     trainer = Trainer(
         model,
         train_loader,

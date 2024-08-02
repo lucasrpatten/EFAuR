@@ -147,7 +147,7 @@ class Metrics:
         device = labels.get_device()
         # 0 = same, 1 = different
         predictions = torch.where(
-            pred >= threshold,
+            pred <= threshold,
             torch.tensor(1.0, device=device),
             torch.tensor(0.0, device=device),
         )
@@ -172,7 +172,7 @@ class Metrics:
         device = labels.get_device()
         # 0 = same, 1 = different
         predictions = torch.where(
-            pred >= threshold,
+            pred <= threshold,
             torch.tensor(1.0, device=device),
             torch.tensor(0.0, device=device),
         )
@@ -198,7 +198,7 @@ class Metrics:
         device = labels.get_device()
         # 0 = same, 1 = different
         predictions = torch.where(
-            pred >= threshold,
+            pred <= threshold,
             torch.tensor(1.0, device=device),
             torch.tensor(0.0, device=device),
         )
@@ -304,7 +304,7 @@ class Metrics:
         device = labels.get_device()
         # 0 = same, 1 = different
         predictions = torch.where(
-            pred >= threshold,
+            pred <= threshold,
             torch.tensor(1.0, device=device),
             torch.tensor(0.0, device=device),
         )
