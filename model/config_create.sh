@@ -3,9 +3,9 @@
 # Define learning rates, activation functions, and pooling methods
 # Change these values to vary the configuration
 #!TODO Find the best learning rate using binary search
-learning_rates=("0.00025") #"0.0002" "0.0005")
+learning_rates=("0.00025" "0.0005" "0.00075")
 #!TODO Find the best activation function
-activations=("relu" "leakyrelu" "swish")
+activations=("leakyrelu") # "relu" "swish")
 #!TODO Find the best pooling method (probably attention)
 pooling_methods=("attention") # "mean" "max"
 

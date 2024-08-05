@@ -158,7 +158,6 @@ class Trainer:
         self.batch_count = 0
         self.train_loss = 0.0
         self.train_accs = (
-            (AverageMeter("Accuracy100/train", Metrics.accuracy, self.writer), 1.0),
             (AverageMeter("Accuracy80/train", Metrics.accuracy, self.writer), 0.8),
             (AverageMeter("Accuracy65/train", Metrics.accuracy, self.writer), 0.65),
             (AverageMeter("Accuracy50/train", Metrics.accuracy, self.writer), 0.5),
@@ -258,10 +257,6 @@ class Trainer:
         with torch.no_grad():
             # metric : tuple(AverageMeter, pred_type, threshold)
             metrics: dict[str, tuple[AverageMeter, float | None]] = {
-                "acc100": (
-                    AverageMeter("Accuracy100/val", Metrics.accuracy, self.writer),
-                    1.0,
-                ),
                 "acc80": (
                     AverageMeter("Accuracy80/val", Metrics.accuracy, self.writer),
                     0.80,
