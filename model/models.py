@@ -121,7 +121,7 @@ class AuthorshipEmbeddingModel(nn.Module):
         input_mask_expanded = (
             attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
         )
-        token_embeddings[input_mask_expanded == 0] = 0
+        token_embeddings[input_mask_expanded == 0] = -1e9
         return torch.max(token_embeddings, 1)[0]
 
     def _attention_pooling(self, token_embeddings: torch.Tensor, _) -> torch.Tensor:

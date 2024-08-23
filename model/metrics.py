@@ -45,7 +45,7 @@ class Metrics:
         output1: torch.Tensor,
         output2: torch.Tensor,
         target: torch.Tensor,
-        margin: float = 1.0,
+        margin: float = 0.8,
     ) -> torch.Tensor:
         """Computes Contrastive Losses
 
@@ -57,6 +57,7 @@ class Metrics:
 
         Returns:
             torch.Tensor: A Tensor of Contrastive Losses
+                (euclid_dist^2 if same author, min(margin-euclid_dist, 0)^2 if different author)
         """
         # if target.size(0) != output1.size(0) or target.size(0) != output2.size(0):
         #     logging.critical(
@@ -113,7 +114,7 @@ class Metrics:
         output1: torch.Tensor,
         output2: torch.Tensor,
         target: torch.Tensor,
-        margin: float = 1.0,
+        margin: float = 0.8,
     ) -> torch.Tensor:
         """Computes Contrastive Loss
 

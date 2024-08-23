@@ -382,8 +382,8 @@ def train(
     batch_size: int = 16,
     epochs: int = 320,
     learning_rate: float = 0.0001,
-    pooling_method: str = "max",
-    activation_function: str = "relu",
+    pooling_method: str = "attention",
+    activation_function: str = "leakyrelu",
 ):
     """Train the model
 
@@ -391,8 +391,8 @@ def train(
         batch_size (int, optional): Batch size. Defaults to 16.
         epochs (int, optional): Number of epochs. Defaults to 150.
         learning_rate (float, optional): Learning rate. Defaults to 0.0005.
-        pooling_method (str, optional): Pooling method. Defaults to "max".
-        activation_function (str, optional): Activation function. Defaults to "relu".
+        pooling_method (str, optional): Pooling method. Defaults to "attention".
+        activation_function (str, optional): Activation function. Defaults to "leakyrelu".
     """
 
     logging.basicConfig(

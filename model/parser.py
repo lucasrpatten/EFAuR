@@ -28,13 +28,13 @@ def parse_arguments():
     parser.add_argument(
         "--activation",
         choices=["relu", "leakyrelu", "swish"],
-        default="relu",
+        default="leakyrelu",
         help="Activation function to use",
     )
     parser.add_argument(
         "--pooling",
         choices=["cls", "mean", "max", "attention"],
-        default="max",
+        default="attention",
         help="Pooling method to use",
     )
 

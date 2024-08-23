@@ -1,5 +1,1 @@
-0 0.00025 leakyrelu attention
-1 0.0005 leakyrelu attention
-2 0.00075 leakyrelu attention
-3 0.00025 swish attention
-4 0.00025 cls attention
+0 128 0.00025 attention swish
