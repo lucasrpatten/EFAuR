@@ -145,17 +145,11 @@ class Metrics:
         Returns:
             float: Accuracy Metric
         """
-        device = labels.get_device()
         # 0 = same, 1 = different
-        predictions = torch.where(
-            pred <= threshold,
-            torch.tensor(1.0, device=device),
-            torch.tensor(0.0, device=device),
-        )
-        correct_predictions = (predictions == labels).sum().item()
-
-        total_predictions = labels.size(0)
-        return float(correct_predictions / total_predictions)
+        predictions = (pred > threshold).float()
+        correct_predictions = (predictions == labels.float()).sum().item()
+        total_predictions = labels.numel()
+        return float(correct_predictions / total_predictions) if total_predictions > 0 else 0
 
     #!FIXME Why does this always return 0?
     @staticmethod

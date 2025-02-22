@@ -81,6 +81,10 @@ class AverageMeter:
         self.sum, self.count = total.tolist()
         self.avg = self.sum / self.count
 
+    def reduce(self):
+        """Reduce the metric across a single processes"""
+        self.avg = self.sum / self.count if self.count != 0 else 0
+
     def write(self, epoch: int):
         """Write the metric to tensorboard
 
