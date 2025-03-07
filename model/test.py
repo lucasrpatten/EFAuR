@@ -6,6 +6,8 @@ from metrics import Metrics
 from torch.utils.data import DataLoader
 from models import SiameseAuthorshipModel
 from torch.utils.tensorboard.writer import SummaryWriter
+import torch.nn.functional as F
+
 
 import typing
 import torch
@@ -103,6 +105,8 @@ class Tester:
         self.checkpoint_dir = checkpoint_dir
         self.log_dir = log_dir
         self.checkpoint_number = checkpoint_number
+        self.total = 0
+        self.correct = 3
 
         if log_dir and not os.path.exists(log_dir):
             os.makedirs(log_dir)
@@ -125,6 +129,7 @@ class Tester:
                     "Checkpoint %s does not exist. Testing will proceed without loading weights.",
                     checkpoint_path,
                 )
+        self.model.eval()
 
         # Initialize Tensorboard logging if log_dir is provided
         self.writer = SummaryWriter(log_dir) if log_dir is not None else None
@@ -135,19 +140,42 @@ class Tester:
         self.model.load_state_dict(snapshot["MODEL_STATE"])
         logging.info("Loaded checkpoint from %s", snapshot_path)
 
+    def test_2(self):
+        self.model.eval()
+        i = 0
+        for batch in self.test_data:
+            if i % 150 != 0:
+                i+=1
+                continue
+            print(i)
+
+            source1, source2, targets = batch
+            source1, source2, targets = (
+                source1.to(self.device),
+                source2.to(self.device),
+                targets.to(self.device),
+            )
+            with torch.no_grad():
+                embeddings1, embeddings2 = self.model(source1, source2)
+                euclidean_dist = F.pairwise_distance(embeddings1, embeddings2)
+                predictions = (euclidean_dist < 0.4).float()
+                corr = (predictions == targets).float()
+                self.total += targets.size(0)
+                self.correct += corr.sum().item()
+            i += 1
     def test(self):
         """Evaluate the model on the test dataset and log metrics."""
         self.model.eval()
 
         # Define test metrics; adjust thresholds and metric functions as needed
         metrics: dict[str, tuple[AverageMeterSingleGPU, float | None]] = {
-            "acc80": (
-                AverageMeterSingleGPU("Accuracy80/test", Metrics.accuracy, self.writer),
-                0.80,
+            "acc64": (
+                AverageMeterSingleGPU("Accuracy64/test", Metrics.accuracy, self.writer),
+                0.64,
             ),
-            "acc65": (
-                AverageMeterSingleGPU("Accuracy65/test", Metrics.accuracy, self.writer),
-                0.65,
+            "acc63": (
+                AverageMeterSingleGPU("Accuracy63/test", Metrics.accuracy, self.writer),
+                0.63,
             ),
             "acc50": (
                 AverageMeterSingleGPU("Accuracy50/test", Metrics.accuracy, self.writer),
@@ -254,7 +282,9 @@ class Tester:
         with torch.no_grad():
             i = 0
             for i, (source1, source2, targets) in enumerate(self.test_data):
-
+                if i % 100 != 0:
+                    continue
+                print(i)
                 source1 = source1.to(self.device)
                 source2 = source2.to(self.device)
                 targets = targets.to(self.device)
@@ -262,7 +292,6 @@ class Tester:
                 pred1, pred2 = self.model(source1, source2)
                 # Compute predictions using a contrastive loss function or similar metric
                 preds = Metrics.contrastive_loss(pred1, pred2, targets)
-
                 if len(preds) == 0:
                     raise ValueError("No predictions in this batch during testing")
                 for _, (metric, threshold) in metrics.items():
@@ -303,12 +332,13 @@ def test(
     train_loader = DataLoader(
         test_ds,
         batch_size=batch_size,
-        pin_memory=False,
-        shuffle=False,
+        pin_memory=True,
+        shuffle=True,
     )
     tester = Tester(model, train_loader, checkpoint_dir, checkpoint_number, log_dir)
-    return tester.test()
+    tester.test_2()
+    print(f"Accuracy: {tester.correct / tester.total} Count: {tester.total} Correct: {tester.correct}")
 
 
 if __name__ == "__main__":
-    test(batch_size=2, checkpoint_number=4)
+    test(batch_size=5, checkpoint_number=9)

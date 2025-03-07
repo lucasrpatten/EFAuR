@@ -10,6 +10,8 @@ import torch
 from torch import nn
 from transformers import RobertaModel
 
+num1 = None
+num2 = None
 
 class Swish(nn.Module):
     """Swish layer defined by x*sigmoid(x)"""
@@ -80,6 +82,7 @@ class AuthorshipEmbeddingModel(nn.Module):
                 f"Pooling method {pooling_method} not recognised. "
                 + "Choose from 'attention', 'cls', 'mean', 'max'"
             )
+        self.roberta.eval()
 
     def forward(self, data: dict[str, torch.Tensor]) -> torch.Tensor:
         """Forward pass
@@ -92,7 +95,8 @@ class AuthorshipEmbeddingModel(nn.Module):
         """
         input_ids = data["input_ids"].squeeze(1)
         input_mask = data["attention_mask"].squeeze(1)
-
+        for param in self.roberta.parameters():
+            param.requires_grad = True
         token_embeddings = self.roberta(
             input_ids=input_ids, attention_mask=input_mask  # type: ignore
         )["last_hidden_state"]
@@ -155,7 +159,8 @@ class SiameseAuthorshipModel(nn.Module):
         Returns:
             torch.Tensor: Similarity score
         """
+        self.embedding_model.eval()
         embedding1 = self.embedding_model(input1)
         embedding2 = self.embedding_model(input2)
-
+        #print idx's where num1 and num2 are different
         return embedding1, embedding2

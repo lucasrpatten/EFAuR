@@ -67,7 +67,6 @@ class Metrics:
         #         target.size(0),
         #     )
         #     sys.exit(1)
-
         euclidean_distance = F.pairwise_distance(  # pylint: disable=not-callable
             output1, output2
         )
